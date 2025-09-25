@@ -27,6 +27,7 @@ struct NewsAPIResponse: Decodable {
 
 class FirebaseManager: ObservableObject {
     @Published var user: User?
+    @Published var selectedLanguage: String?
     private var cancellables = Set<AnyCancellable>()
     private let auth = Auth.auth()
 
@@ -35,6 +36,14 @@ class FirebaseManager: ObservableObject {
         Auth.auth().addStateDidChangeListener { [weak self] (_, user) in
             self?.user = user
         }
+        
+        // Load selected language from UserDefaults
+        selectedLanguage = UserDefaults.standard.string(forKey: "selectedLanguage")
+    }
+    
+    func setLanguage(_ language: String) {
+        selectedLanguage = language
+        UserDefaults.standard.set(language, forKey: "selectedLanguage")
     }
 
     /// Initiates the Google Sign-In flow.
@@ -99,24 +108,24 @@ class FirebaseManager: ObservableObject {
         print("Signed out of Google.")
     }
 
-    /// Signs in the user anonymously and fetches news articles.
-    func fetchNews(completion: @escaping (Result<[NewsArticle], Error>) -> Void) {
-        // 1. Ensure user is signed in (anonymously for this test)
-        auth.signInAnonymously { [weak self] (authResult, error) in
-            if let error = error {
-                completion(.failure(error))
-                return
-            }
-            
-            guard let user = authResult?.user else {
-                completion(.failure(NSError(domain: "AuthError", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not found."])))
-                return
-            }
-
-            print("Successfully signed in anonymously with UID: \(user.uid)")
-
-            // 2. Get the Firebase ID token
-            user.getIDToken { (token, error) in
+    /// Fetches news articles for a specific language.
+    func fetchNewsForLanguage(language: String, completion: @escaping (Result<[NewsArticle], Error>) -> Void) {
+        // Map language names to ISO codes for the API
+        let languageCode: String
+        switch language.lowercased() {
+        case "spanish":
+            languageCode = "es"
+        case "french":
+            languageCode = "fr"
+        case "japanese":
+            languageCode = "ja"
+        default:
+            languageCode = "en"
+        }
+        
+        // If user is already signed in, use their auth token
+        if let user = auth.currentUser {
+            user.getIDToken { [weak self] (token, error) in
                 if let error = error {
                     completion(.failure(error))
                     return
@@ -126,26 +135,56 @@ class FirebaseManager: ObservableObject {
                     completion(.failure(NSError(domain: "AuthError", code: -2, userInfo: [NSLocalizedDescriptionKey: "ID token not found."])))
                     return
                 }
-
-                print("Got ID Token. Ready to call backend.")
                 
-                // 3. Call the getNews function via its HTTP trigger
-                self?.callGetNewsFunction(token: token, completion: completion)
+                // Call the getNews function with language parameter
+                self?.callGetNewsFunction(token: token, language: languageCode, completion: completion)
+            }
+        } else {
+            // If no user, sign in anonymously first
+            auth.signInAnonymously { [weak self] (authResult, error) in
+                if let error = error {
+                    completion(.failure(error))
+                    return
+                }
+                
+                guard let user = authResult?.user else {
+                    completion(.failure(NSError(domain: "AuthError", code: -1, userInfo: [NSLocalizedDescriptionKey: "User not found."])))
+                    return
+                }
+                
+                print("Successfully signed in anonymously with UID: \(user.uid)")
+                
+                user.getIDToken { (token, error) in
+                    if let error = error {
+                        completion(.failure(error))
+                        return
+                    }
+                    
+                    guard let token = token else {
+                        completion(.failure(NSError(domain: "AuthError", code: -2, userInfo: [NSLocalizedDescriptionKey: "ID token not found."])))
+                        return
+                    }
+                    
+                    print("Got ID Token. Ready to call backend.")
+                    
+                    // Call the getNews function with language parameter
+                    self?.callGetNewsFunction(token: token, language: languageCode, completion: completion)
+                }
             }
         }
     }
 
-    private func callGetNewsFunction(token: String, completion: @escaping (Result<[NewsArticle], Error>) -> Void) {
+    private func callGetNewsFunction(token: String, language: String, completion: @escaping (Result<[NewsArticle], Error>) -> Void) {
         // NOTE: The project ID 'idioma-87bed' is hardcoded here.
         // In a real app, this would be configured dynamically.
-        guard let url = URL(string: "http://127.0.0.1:5001/idioma-87bed/us-central1/getNews?country=us&language=en") else {
+        guard let url = URL(string: "http://127.0.0.1:5001/idioma-87bed/us-central1/getNews?language=\(language)") else {
             completion(.failure(NSError(domain: "URLError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])))
             return
         }
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        // 4. Add the token to the Authorization header
+        // Add the token to the Authorization header
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
         URLSession.shared.dataTask(with: request) { (data, response, error) in
@@ -171,7 +210,7 @@ class FirebaseManager: ObservableObject {
             }
 
             do {
-                // 5. Decode the JSON response
+                // Decode the JSON response
                 let apiResponse = try JSONDecoder().decode(NewsAPIResponse.self, from: data)
                 DispatchQueue.main.async {
                     completion(.success(apiResponse.results))
