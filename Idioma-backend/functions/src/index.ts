@@ -384,13 +384,14 @@ export const extractArticle = onRequest(async (request, response) => {
 
 // Function to simplify article content using OpenAI for different CEFR levels
 export const simplifyArticle = onRequest(async (request, response) => {
-  const { url, level = 'B1' } = request.query as { url?: string; level?: string };
-  const { url: bodyUrl, level: bodyLevel } = request.body || {};
+  const { url, level = 'B1', stream = 'false' } = request.query as { url?: string; level?: string; stream?: string };
+  const { url: bodyUrl, level: bodyLevel, stream: bodyStream } = request.body || {};
   
   const articleUrl = url || bodyUrl;
   const cefrLevel = level || bodyLevel || 'B1';
+  const enableStream = (stream || bodyStream || 'false').toLowerCase() === 'true';
   
-  logger.info("simplifyArticle called", { url: articleUrl, level: cefrLevel });
+  logger.info("simplifyArticle called", { url: articleUrl, level: cefrLevel, stream: enableStream });
 
   if (!articleUrl) {
     response.status(400).json({ error: "Missing 'url' parameter" });
@@ -445,93 +446,148 @@ export const simplifyArticle = onRequest(async (request, response) => {
     });
 
     // 3) Prepare the simplification prompt
-    const levelDescriptions = {
-      A2: "elementary level (simple sentences, present/past tense, basic vocabulary, short paragraphs)",
-      B1: "intermediate level (clear structure, common vocabulary, some complex sentences, longer paragraphs)",
-      B2: "upper-intermediate level (varied sentence structure, more sophisticated vocabulary, detailed explanations)",
-      C1: "advanced level (complex ideas, nuanced vocabulary, sophisticated grammar, comprehensive analysis)"
-    };
+    const systemPrompt = `Simplify this news article for CEFR ${cefrLevel} level learners. Preserve all <img> tags exactly.
 
-    const systemPrompt = `You are an expert language teacher who simplifies news articles for language learners. 
+    ${cefrLevel} guidelines:
+    ${cefrLevel === 'A2' ? '- Simple present/past tense, 10-15 word sentences, basic vocabulary' : ''}
+    ${cefrLevel === 'B1' ? '- Mix simple/compound sentences, common vocabulary, clear structure' : ''}
+    ${cefrLevel === 'B2' ? '- Varied sentences, sophisticated vocabulary, detailed explanations' : ''}
+    ${cefrLevel === 'C1' ? '- Complex structures, advanced vocabulary, nuanced explanations' : ''}
 
-    Your task:
-    1. Rewrite the article content for CEFR ${cefrLevel} level (${levelDescriptions[cefrLevel as keyof typeof levelDescriptions]})
-    2. PRESERVE all <img> tags exactly as they appear - do not modify src, alt, or remove any images
-    3. Keep the same article structure and flow
-    4. Maintain factual accuracy while using simpler language
-    5. Return ONLY the simplified HTML content
-
-    Guidelines for ${cefrLevel} level:
-    ${cefrLevel === 'A2' ? '- Use simple present/past tense\n- Short sentences (10-15 words)\n- Basic vocabulary (most common 2000 words)\n- Clear, direct statements' : ''}
-    ${cefrLevel === 'B1' ? '- Mix of simple and compound sentences\n- Common vocabulary with some intermediate words\n- Clear paragraph structure\n- Present perfect and future tenses OK' : ''}
-    ${cefrLevel === 'B2' ? '- Varied sentence length and structure\n- More sophisticated vocabulary\n- Complex ideas explained clearly\n- Full range of tenses' : ''}
-    ${cefrLevel === 'C1' ? '- Complex sentence structures\n- Advanced vocabulary and expressions\n- Nuanced explanations\n- Sophisticated grammar constructions' : ''}
-
-    Return only the HTML content, no explanations or comments.`;
+    Return only simplified HTML, no explanations.`;
 
     const userPrompt = `Please simplify this article for ${cefrLevel} level learners. Preserve all <img> tags exactly:
 
     ${originalArticle.llmHtml}`;
 
-    // 4) Call OpenAI API
-    logger.info("Calling OpenAI API", { level: cefrLevel, contentLength: originalArticle.llmHtml?.length });
+    // 4) Call OpenAI API with conditional streaming
+    logger.info("Calling OpenAI API", { level: cefrLevel, contentLength: originalArticle.llmHtml?.length, streaming: enableStream });
     
-    const completion = await openai.chat.completions.create({
-      model: "gpt-5-nano", // Cost-effective for text simplification
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ],
-      max_completion_tokens: 4000,
-    });
+    if (enableStream) {
+      // Set up streaming response
+      response.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      response.setHeader('Transfer-Encoding', 'chunked');
+      response.setHeader('Cache-Control', 'no-cache');
+      response.setHeader('Connection', 'keep-alive');
+      response.setHeader('Access-Control-Allow-Origin', '*');
+      response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      response.removeHeader('Content-Length');
 
-    const simplifiedHtml = completion.choices[0]?.message?.content;
-    
-    if (!simplifiedHtml) {
-      logger.error("OpenAI returned empty response", { url: articleUrl, level: cefrLevel });
-      response.status(500).json({ error: "Failed to generate simplified content" });
-      return;
+      
+      let fullContent = '';
+      let tokenCount = 0;
+      
+      const stream = await openai.chat.completions.create({
+        model: "gpt-5-nano",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        max_completion_tokens: 3000,
+        stream: true,
+      });
+
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        if (content) {
+          fullContent += content;
+          tokenCount += 1;
+          // Send chunk to client
+          response.write(`data: ${JSON.stringify({ content, done: false })}\n\n`);
+        }
+      }
+      
+      // Send completion signal
+      response.write(`data: ${JSON.stringify({ content: '', done: true, totalTokens: tokenCount })}\n\n`);
+      response.end();
+      
+      logger.info("OpenAI streaming completed", {
+        url: articleUrl,
+        level: cefrLevel,
+        originalLength: originalArticle.llmHtml?.length || 0,
+        simplifiedLength: fullContent.length,
+        tokensUsed: tokenCount
+      });
+      
+      // Cache the complete result asynchronously (don't wait for it)
+      const simplifiedPayload = {
+        originalUrl: articleUrl,
+        cefrLevel,
+        title: originalArticle.title,
+        byline: originalArticle.byline,
+        siteName: originalArticle.siteName,
+        simplifiedHtml: fullContent,
+        leadImageUrl: originalArticle.leadImageUrl,
+        images: originalArticle.images,
+        timestamp: Timestamp.now(),
+        tokensUsed: tokenCount,
+      };
+      
+      // Cache asynchronously - don't block the response
+      db.collection("simplifiedArticles").add(simplifiedPayload)
+        .then(() => logger.info("Streamed result cached successfully", { url: articleUrl, level: cefrLevel }))
+        .catch(error => logger.error("Failed to cache streamed result", { error, url: articleUrl }));
+      
+    } else {
+      // Existing non-streaming logic
+      const completion = await openai.chat.completions.create({
+        model: "gpt-5-nano",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        max_completion_tokens: 3000,
+        stream: false,
+      });
+
+      const simplifiedHtml = completion.choices[0]?.message?.content;
+      
+      if (!simplifiedHtml) {
+        logger.error("OpenAI returned empty response", { url: articleUrl, level: cefrLevel });
+        response.status(500).json({ error: "Failed to generate simplified content" });
+        return;
+      }
+
+      logger.info("OpenAI simplification completed", {
+        url: articleUrl,
+        level: cefrLevel,
+        originalLength: originalArticle.llmHtml?.length || 0,
+        simplifiedLength: simplifiedHtml.length,
+        tokensUsed: completion.usage?.total_tokens || 0
+      });
+
+      // 5) Build response payload and cache
+      const simplifiedPayload = {
+        originalUrl: articleUrl,
+        cefrLevel,
+        title: originalArticle.title,
+        byline: originalArticle.byline,
+        siteName: originalArticle.siteName,
+        simplifiedHtml,
+        leadImageUrl: originalArticle.leadImageUrl,
+        images: originalArticle.images,
+        timestamp: Timestamp.now(),
+        tokensUsed: completion.usage?.total_tokens || 0,
+      };
+
+      const payloadBytes = Buffer.byteLength(JSON.stringify(simplifiedPayload), "utf8");
+      logger.info("Firestore document size (simplifiedArticles)", {
+        bytes: payloadBytes,
+        kb: (payloadBytes / 1024).toFixed(2),
+        level: cefrLevel,
+        imagesCount: originalArticle.images?.length || 0
+      });
+
+      await db.collection("simplifiedArticles").add(simplifiedPayload);
+      
+      logger.info("Simplified article cached", { 
+        url: articleUrl, 
+        level: cefrLevel,
+        title: originalArticle.title 
+      });
+      
+      response.json(simplifiedPayload);
     }
-
-    logger.info("OpenAI simplification completed", {
-      url: articleUrl,
-      level: cefrLevel,
-      originalLength: originalArticle.llmHtml?.length || 0,
-      simplifiedLength: simplifiedHtml.length,
-      tokensUsed: completion.usage?.total_tokens || 0
-    });
-
-    // 5) Build response payload and cache
-    const simplifiedPayload = {
-      originalUrl: articleUrl,
-      cefrLevel,
-      title: originalArticle.title,
-      byline: originalArticle.byline,
-      siteName: originalArticle.siteName,
-      simplifiedHtml,
-      leadImageUrl: originalArticle.leadImageUrl,
-      images: originalArticle.images,
-      timestamp: Timestamp.now(),
-      tokensUsed: completion.usage?.total_tokens || 0,
-    };
-
-    const payloadBytes = Buffer.byteLength(JSON.stringify(simplifiedPayload), "utf8");
-    logger.info("Firestore document size (simplifiedArticles)", {
-      bytes: payloadBytes,
-      kb: (payloadBytes / 1024).toFixed(2),
-      level: cefrLevel,
-      imagesCount: originalArticle.images?.length || 0
-    });
-
-    await db.collection("simplifiedArticles").add(simplifiedPayload);
-    
-    logger.info("Simplified article cached", { 
-      url: articleUrl, 
-      level: cefrLevel,
-      title: originalArticle.title 
-    });
-    
-    response.json(simplifiedPayload);
 
   } catch (error) {
     logger.error("Error in simplifyArticle", {
