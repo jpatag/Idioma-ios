@@ -131,35 +131,27 @@ struct LanguageDetailView: View {
     @ObservedObject var authManager: FirebaseManager
     @Environment(\.presentationMode) var presentationMode
     
-    // Example articles for each language
+    @State private var articles: [NewsArticle] = []
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+    
+    // Backup example articles in case API fails
     private var exampleArticles: [ExampleArticle] {
         switch language {
         case "Spanish":
             return [
-                ExampleArticle(id: "1", title: "Barcelona anuncia nuevo parque sostenible", description: "La ciudad de Barcelona ha anunciado la creación de un nuevo parque urbano que utilizará tecnologías sostenibles.", link: "www.noticias-barcelona.es/parque-sostenible"),
-                ExampleArticle(id: "2", title: "Madrid celebra festival de cine internacional", description: "El festival de cine de Madrid atrae a directores y actores de todo el mundo este fin de semana.", link: "www.cultura-madrid.es/festival-cine"),
-                ExampleArticle(id: "3", title: "La selección española prepara el mundial", description: "El equipo nacional intensifica sus entrenamientos para el próximo mundial de fútbol.", link: "www.deportes.es/mundial-preparacion"),
-                ExampleArticle(id: "4", title: "Nueva exposición en el Museo del Prado", description: "El Museo del Prado inaugura una exposición de arte renacentista con obras nunca antes vistas en España.", link: "www.cultura-madrid.es/prado-exposicion"),
-                ExampleArticle(id: "5", title: "Científicos españoles descubren nueva especie marina", description: "Un equipo de biólogos marinos ha identificado una nueva especie de coral en las costas del Mediterráneo.", link: "www.ciencia.es/descubrimiento-marino"),
-                ExampleArticle(id: "6", title: "España lidera iniciativa de energía renovable", description: "El gobierno español presenta un ambicioso plan para aumentar la producción de energía solar y eólica en los próximos cinco años.", link: "www.energia-verde.es/plan-nacional")
+                ExampleArticle(id: "1", title: "Barcelona anuncia nuevo parque sostenible", description: "La ciudad de Barcelona ha anunciado la creación de un nuevo parque urbano que utilizará tecnologías sostenibles.", link: "https://www.noticias-barcelona.es/parque-sostenible"),
+                ExampleArticle(id: "2", title: "Madrid celebra festival de cine internacional", description: "El festival de cine de Madrid atrae a directores y actores de todo el mundo este fin de semana.", link: "https://www.cultura-madrid.es/festival-cine")
             ]
         case "French":
             return [
-                ExampleArticle(id: "1", title: "Paris accueille les Jeux Olympiques 2024", description: "La capitale française se prépare pour accueillir des milliers d'athlètes du monde entier.", link: "www.actualites-paris.fr/jeux-olympiques"),
-                ExampleArticle(id: "2", title: "Nouveau record de visiteurs au Louvre", description: "Le musée du Louvre a enregistré un nombre record de visiteurs ce trimestre.", link: "www.culture-france.fr/louvre-visiteurs"),
-                ExampleArticle(id: "3", title: "Les vignerons français face au changement climatique", description: "Les producteurs de vin adaptent leurs pratiques face aux défis du réchauffement global.", link: "www.agriculture-fr.com/vignerons-climat"),
-                ExampleArticle(id: "4", title: "La Tour Eiffel se transforme pour les célébrations", description: "Une nouvelle installation lumineuse va transformer le monument emblématique pour les festivités nationales.", link: "www.paris-attractions.fr/tour-eiffel-lumiere"),
-                ExampleArticle(id: "5", title: "Les écoles françaises adoptent un nouveau programme numérique", description: "Le ministère de l'Éducation introduit des tablettes dans les écoles primaires dans tout le pays.", link: "www.education.fr/programme-numerique"),
-                ExampleArticle(id: "6", title: "La cuisine française reconnue patrimoine mondial", description: "L'UNESCO ajoute la gastronomie française à sa liste de patrimoines culturels immatériels.", link: "www.gastronomie.fr/unesco-patrimoine")
+                ExampleArticle(id: "1", title: "Paris accueille les Jeux Olympiques 2024", description: "La capitale française se prépare pour accueillir des milliers d'athlètes du monde entier.", link: "https://www.actualites-paris.fr/jeux-olympiques"),
+                ExampleArticle(id: "2", title: "Nouveau record de visiteurs au Louvre", description: "Le musée du Louvre a enregistré un nombre record de visiteurs ce trimestre.", link: "https://www.culture-france.fr/louvre-visiteurs")
             ]
         case "Japanese":
             return [
-                ExampleArticle(id: "1", title: "東京で新しい技術展示会が開催", description: "最新のテクノロジーを紹介する展示会が東京で開催され、多くの来場者が訪れています。", link: "www.tech-news.jp/tokyo-expo"),
-                ExampleArticle(id: "2", title: "日本の伝統工芸が海外で人気に", description: "日本の伝統的な工芸品が海外市場で高い評価を受けています。特に若い世代に注目されています。", link: "www.culture-japan.jp/traditional-crafts"),
-                ExampleArticle(id: "3", title: "桜の季節が早まる傾向、気候変動の影響か", description: "日本各地で桜の開花が例年より早まっており、専門家は気候変動との関連を指摘しています。", link: "www.environment.jp/sakura-climate"),
-                ExampleArticle(id: "4", title: "新しい高速鉄道路線が計画中", description: "東京と大阪を結ぶ新しい高速鉄道の計画が発表され、移動時間が大幅に短縮される見込みです。", link: "www.transport.jp/new-train"),
-                ExampleArticle(id: "5", title: "日本の大学が国際ランキングで上昇", description: "複数の日本の大学が世界大学ランキングで順位を上げ、国際的な評価が高まっています。", link: "www.education.jp/university-ranking"),
-                ExampleArticle(id: "6", title: "和食の健康効果に関する新研究", description: "伝統的な日本食の摂取と長寿の関係について、新しい研究結果が発表されました。", link: "www.health-studies.jp/japanese-diet")
+                ExampleArticle(id: "1", title: "東京で新しい技術展示会が開催", description: "最新のテクノロジーを紹介する展示会が東京で開催され、多くの来場者が訪れています。", link: "https://www.tech-news.jp/tokyo-expo"),
+                ExampleArticle(id: "2", title: "日本の伝統工芸が海外で人気に", description: "日本の伝統的な工芸品が海外市場で高い評価を受けています。特に若い世代に注目されています。", link: "https://www.culture-japan.jp/traditional-crafts")
             ]
         default:
             return []
@@ -195,21 +187,111 @@ struct LanguageDetailView: View {
                 
                 // Articles section with title - expanded to use more space
                 VStack(alignment: .leading) {
-                    Text("Latest Articles")
-                        .font(.headline)
+                    HStack {
+                        Text("Latest Articles")
+                            .font(.headline)
+                        
+                        Spacer()
+                        
+                        if isLoading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle())
+                                .scaleEffect(0.7)
+                        } else if articles.isEmpty && errorMessage == nil {
+                            Button(action: {
+                                fetchArticles()
+                            }) {
+                                Label("Refresh", systemImage: "arrow.clockwise")
+                                    .font(.caption)
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                    }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 4)
                     
-                    // Scrollable article list - expanded to use more space
-                    List {
-                        ForEach(exampleArticles) { article in
-                            ArticleRowView(article: article, color: color)
+                    if let error = errorMessage {
+                        // Error state
+                        VStack(spacing: 10) {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.system(size: 40))
+                                .foregroundColor(.orange)
+                            
+                            Text(error)
+                                .font(.headline)
+                                .foregroundColor(.gray)
+                                .multilineTextAlignment(.center)
+                            
+                            Button(action: {
+                                fetchArticles()
+                            }) {
+                                Text("Try Again")
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 10)
+                                    .background(Color.blue)
+                                    .cornerRadius(10)
+                            }
+                            .padding(.top, 5)
+                            
+                            // Show example articles as fallback
+                            Text("Here are some example articles:")
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                                .padding(.top, 20)
+                            
+                            List {
+                                ForEach(exampleArticles) { article in
+                                    ArticleRowView(article: article, color: color, language: language, authManager: authManager)
+                                }
+                            }
+                            .listStyle(.plain)
+                            .frame(height: 300)
                         }
+                        .padding()
+                    } else {
+                        // Scrollable article list - expanded to use more space
+                        List {
+                            if !articles.isEmpty {
+                                ForEach(articles) { article in
+                                    ArticleRowView(article: article, color: color, language: language, authManager: authManager)
+                                }
+                            } else if !isLoading {
+                                ForEach(exampleArticles) { article in
+                                    ArticleRowView(article: article, color: color, language: language, authManager: authManager)
+                                }
+                            } else {
+                                // Loading placeholders
+                                ForEach(0..<5, id: \.self) { _ in
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Rectangle()
+                                                .fill(Color.gray.opacity(0.3))
+                                                .frame(height: 20)
+                                                .cornerRadius(4)
+                                            
+                                            Rectangle()
+                                                .fill(Color.gray.opacity(0.2))
+                                                .frame(height: 40)
+                                                .cornerRadius(4)
+                                            
+                                            Rectangle()
+                                                .fill(Color.gray.opacity(0.15))
+                                                .frame(height: 15)
+                                                .cornerRadius(4)
+                                        }
+                                    }
+                                    .padding(.vertical, 8)
+                                    .redacted(reason: .placeholder)
+                                }
+                            }
+                        }
+                        .listStyle(.plain)
+                        .background(Color.white)
+                        .cornerRadius(12)
+                        .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
                     }
-                    .listStyle(.plain)
-                    .background(Color.white)
-                    .cornerRadius(12)
-                    .shadow(color: Color.black.opacity(0.05), radius: 4, x: 0, y: 2)
                 }
                 .padding(.top, 5)
                 .overlay(
@@ -250,6 +332,26 @@ struct LanguageDetailView: View {
         .onAppear {
             // Save the selected language
             authManager.setLanguage(language)
+            
+            // Fetch articles when the view appears
+            fetchArticles()
+        }
+    }
+    
+    private func fetchArticles() {
+        isLoading = true
+        errorMessage = nil
+        
+        authManager.fetchNewsForLanguage(language: language) { result in
+            isLoading = false
+            
+            switch result {
+            case .success(let newsArticles):
+                self.articles = newsArticles
+            case .failure(let error):
+                self.errorMessage = "Couldn't load articles: \(error.localizedDescription)"
+                print("Error fetching articles: \(error)")
+            }
         }
     }
 }
@@ -262,10 +364,23 @@ struct ExampleArticle: Identifiable {
     let link: String
 }
 
+// Protocol for article-like objects
+protocol ArticleDisplayable {
+    var title: String { get }
+    var description: String? { get }
+    var link: String { get }
+}
+
+extension NewsArticle: ArticleDisplayable {}
+
+extension ExampleArticle: ArticleDisplayable {}
+
 // Reusable article row view - more compact design
-struct ArticleRowView: View {
-    let article: ExampleArticle
+struct ArticleRowView<T: ArticleDisplayable>: View {
+    let article: T
     let color: Color
+    let language: String
+    let authManager: FirebaseManager
     
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -273,7 +388,7 @@ struct ArticleRowView: View {
                 .font(.headline)
                 .foregroundColor(.black)
             
-            Text(article.description)
+            Text(article.description ?? "No description available")
                 .font(.subheadline)
                 .foregroundColor(.gray)
                 .lineLimit(2)
@@ -287,15 +402,31 @@ struct ArticleRowView: View {
                 Spacer()
                 
                 // More compact read button
-                Button(action: {
-                    // This would navigate to the article detail view in a real app
-                }) {
-                    HStack(spacing: 4) {
-                        Text("Read")
-                            .fontWeight(.medium)
-                        
-                        Image(systemName: "arrow.right")
-                            .font(.caption)
+                if let newsArticle = article as? NewsArticle {
+                    NavigationLink(destination: ArticleDetailView(
+                        article: newsArticle,
+                        language: language,
+                        authManager: authManager
+                    )) {
+                        HStack(spacing: 4) {
+                            Text("Read")
+                                .fontWeight(.medium)
+                            
+                            Image(systemName: "arrow.right")
+                                .font(.caption)
+                        }
+                    }
+                } else {
+                    Button(action: {
+                        // This would navigate to the article detail view in a real app
+                    }) {
+                        HStack(spacing: 4) {
+                            Text("Read")
+                                .fontWeight(.medium)
+                            
+                            Image(systemName: "arrow.right")
+                                .font(.caption)
+                        }
                     }
                     .font(.caption)
                     .padding(.horizontal, 10)

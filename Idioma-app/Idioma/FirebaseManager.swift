@@ -24,6 +24,23 @@ struct NewsAPIResponse: Decodable {
     let results: [NewsArticle]
 }
 
+// A struct for extracted article content
+struct ExtractedArticle: Decodable {
+    let title: String
+    let content: String
+    let byline: String?
+    let siteName: String?
+    let excerpt: String?
+    let textContent: String
+}
+
+// A struct for simplified article content
+struct SimplifiedArticle: Decodable {
+    let original: String
+    let simplified: String
+    let language: String
+}
+
 
 class FirebaseManager: ObservableObject {
     @Published var user: User?
@@ -175,9 +192,8 @@ class FirebaseManager: ObservableObject {
     }
 
     private func callGetNewsFunction(token: String, language: String, completion: @escaping (Result<[NewsArticle], Error>) -> Void) {
-        // NOTE: The project ID 'idioma-87bed' is hardcoded here.
-        // In a real app, this would be configured dynamically.
-        guard let url = URL(string: "http://127.0.0.1:5001/idioma-87bed/us-central1/getNews?language=\(language)") else {
+        // Using the deployed cloud function URL
+        guard let url = URL(string: "https://getnews-64vohpb5ra-uc.a.run.app?language=\(language)") else {
             completion(.failure(NSError(domain: "URLError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])))
             return
         }
@@ -219,5 +235,143 @@ class FirebaseManager: ObservableObject {
                 completion(.failure(error))
             }
         }.resume()
+    }
+    
+    /// Extracts the main content from an article URL
+    func extractArticle(articleUrl: String, completion: @escaping (Result<ExtractedArticle, Error>) -> Void) {
+        guard let url = URL(string: "https://extractarticle-64vohpb5ra-uc.a.run.app") else {
+            completion(.failure(NSError(domain: "URLError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid extraction URL"])))
+            return
+        }
+        
+        // Get the auth token
+        auth.currentUser?.getIDToken { (token, error) in
+            if let error = error {
+                completion(.failure(error))
+                return
+            }
+            
+            guard let token = token else {
+                completion(.failure(NSError(domain: "AuthError", code: -2, userInfo: [NSLocalizedDescriptionKey: "ID token not found."])))
+                return
+            }
+            
+            // Create request
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            
+            // Create request body
+            let body: [String: Any] = ["url": articleUrl]
+            
+            do {
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            } catch {
+                completion(.failure(error))
+                return
+            }
+            
+            URLSession.shared.dataTask(with: request) { (data, response, error) in
+                if let error = error {
+                    completion(.failure(error))
+                    return
+                }
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    completion(.failure(NSError(domain: "NetworkError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])))
+                    return
+                }
+                
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    let message = "Server returned status \(httpResponse.statusCode)"
+                    completion(.failure(NSError(domain: "ServerError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: message])))
+                    return
+                }
+                
+                guard let data = data else {
+                    completion(.failure(NSError(domain: "NetworkError", code: -2, userInfo: [NSLocalizedDescriptionKey: "No data received"])))
+                    return
+                }
+                
+                do {
+                    let extractedArticle = try JSONDecoder().decode(ExtractedArticle.self, from: data)
+                    DispatchQueue.main.async {
+                        completion(.success(extractedArticle))
+                    }
+                } catch {
+                    completion(.failure(error))
+                }
+            }.resume()
+        }
+    }
+    
+    /// Simplifies an article's content
+    func simplifyArticle(content: String, language: String, completion: @escaping (Result<SimplifiedArticle, Error>) -> Void) {
+        guard let url = URL(string: "https://simplifyarticle-64vohpb5ra-uc.a.run.app") else {
+            completion(.failure(NSError(domain: "URLError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid simplification URL"])))
+            return
+        }
+        
+        // Get the auth token
+        auth.currentUser?.getIDToken { (token, error) in
+            if let error = error {
+                completion(.failure(error))
+                return
+            }
+            
+            guard let token = token else {
+                completion(.failure(NSError(domain: "AuthError", code: -2, userInfo: [NSLocalizedDescriptionKey: "ID token not found."])))
+                return
+            }
+            
+            // Create request
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            
+            // Create request body
+            let body: [String: Any] = ["content": content, "language": language]
+            
+            do {
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            } catch {
+                completion(.failure(error))
+                return
+            }
+            
+            URLSession.shared.dataTask(with: request) { (data, response, error) in
+                if let error = error {
+                    completion(.failure(error))
+                    return
+                }
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    completion(.failure(NSError(domain: "NetworkError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])))
+                    return
+                }
+                
+                guard (200...299).contains(httpResponse.statusCode) else {
+                    let message = "Server returned status \(httpResponse.statusCode)"
+                    completion(.failure(NSError(domain: "ServerError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: message])))
+                    return
+                }
+                
+                guard let data = data else {
+                    completion(.failure(NSError(domain: "NetworkError", code: -2, userInfo: [NSLocalizedDescriptionKey: "No data received"])))
+                    return
+                }
+                
+                do {
+                    let simplifiedArticle = try JSONDecoder().decode(SimplifiedArticle.self, from: data)
+                    DispatchQueue.main.async {
+                        completion(.success(simplifiedArticle))
+                    }
+                } catch {
+                    completion(.failure(error))
+                }
+            }.resume()
+        }
     }
 }
