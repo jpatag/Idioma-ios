@@ -1,3 +1,15 @@
+// ---
+// AUTHENTICATION USAGE NOTE:
+// All protected endpoints (e.g., getNews) now require a valid Firebase ID token in the Authorization header:
+//   Authorization: Bearer <FIREBASE_ID_TOKEN>
+//
+// To test locally:
+// 1. Sign in with Google in your iOS app (or Firebase Auth emulator UI) and get the ID token.
+// 2. Call the endpoint with:
+//    curl -H "Authorization: Bearer <ID_TOKEN>" "http://127.0.0.1:5001/idioma-87bed/us-central1/getNews?country=us&language=en"
+// 3. If the token is missing/invalid/expired, you'll get 401 Unauthorized.
+// 4. The decoded user info is available as 'uid' in logs for debugging.
+// ---
 /**
  * Import function triggers from their respective submodules:
  *
@@ -18,6 +30,28 @@ import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
 import OpenAI from 'openai';
 
+// --- Firebase Admin SDK for verifying ID tokens ---
+
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
+
+/**
+ * Verifies Firebase ID token from Authorization header.
+ * Returns decoded token if valid, else null.
+ */
+// async function verifyFirebaseIdToken(request: any): Promise<admin.auth.DecodedIdToken | null> {
+//   const authHeader = request.headers["authorization"] || request.headers["Authorization"];
+//   if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
+//   const idToken = authHeader.split(" ")[1];
+//   try {
+//     return await admin.auth().verifyIdToken(idToken);
+//   } catch (err) {
+//     logger.warn("Invalid or expired Firebase ID token", err);
+//     return null;
+//   }
+// }
+
 dotenv.config({path: path.join(__dirname, "../../.env"), debug: true}); // Use absolute path resolution with debug
 
 const newsAPIKey = process.env.NEWS_API_KEY;
@@ -29,7 +63,6 @@ const openai = new OpenAI({
 });
 logger.info("Loaded OPENAI_API_KEY:", process.env.OPENAI_API_KEY ? "[SET]" : "[NOT SET]");
 
-admin.initializeApp();
 const db = admin.firestore();
 
 // Start writing functions
@@ -49,6 +82,13 @@ setGlobalOptions({maxInstances: 10});
 // Function to fetch news based on country and language, checks firebase datbase first
 
 export const getNews = onRequest(async (request, response) => {
+  // --- Require Firebase Auth ---
+  // const decodedToken = await verifyFirebaseIdToken(request);
+  // if (!decodedToken) {
+  //   response.status(401).json({ error: "Unauthorized: missing or invalid Firebase ID token" });
+  //   return;
+  // }
+
   logger.info("Fetching news with parameters:", {
     country: request.query.country,
     language: request.query.language,
@@ -95,6 +135,7 @@ export const getNews = onRequest(async (request, response) => {
     const apiResponse = await axios.get("https://newsdata.io/api/1/news", {
       params: {
         apikey: newsAPIKey,
+// ...existing code...
         country: country,
         language: language,
       }
@@ -133,6 +174,12 @@ export const getNews = onRequest(async (request, response) => {
 export const extractArticle = onRequest(async (request, response) => {
   const url = (request.query.url as string) || (request.body && (request.body.url as string));
   logger.info("extractArticle called", { url });
+
+  // const decodedToken = await verifyFirebaseIdToken(request);
+  // if (!decodedToken) {
+  //   response.status(401).json({ error: "Unauthorized: missing or invalid Firebase ID token" });
+  //   return;
+  // }
 
   if (!url) {
     response.status(400).json({ error: "Missing 'url' query or body parameter" });

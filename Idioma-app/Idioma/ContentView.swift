@@ -8,14 +8,16 @@
 import SwiftUI
 
 struct ContentView: View {
+    @StateObject private var authManager = FirebaseManager()
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Balls")
+        // This view now acts as a router, showing the correct view
+        // based on the user's authentication state.
+        if authManager.user != nil {
+            HomeView(authManager: authManager)
+        } else {
+            LoginView(authManager: authManager)
         }
-        .padding()
     }
 }
 
