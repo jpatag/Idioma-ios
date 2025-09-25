@@ -35,6 +35,10 @@
       "enabled": true,
       "host": "127.0.0.1",
       "port": 4000
-    }
+    },
+    "firestore": {
+      "port": 8080
+    },
+    "singleProjectMode": true
   }
 }
