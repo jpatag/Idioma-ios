@@ -10,7 +10,9 @@ struct ArticleDetailView: View {
     @State private var extractedArticle: ExtractedArticle?
     @State private var simplifiedArticle: SimplifiedArticle?
     @State private var errorMessage: String?
-    @State private var showOriginal = false
+    @State private var showOriginal = true // Show original text first by default
+    @State private var hasLoadedContent = false // Track if content has been loaded
+    @State private var cleanedOriginalText: String = "" // Cache cleaned content
     
     var body: some View {
         ScrollView {
@@ -55,7 +57,9 @@ struct ArticleDetailView: View {
                             .multilineTextAlignment(.center)
                         
                         Button(action: {
-                            loadArticleContent()
+                            Task {
+                                await loadArticleContent()
+                            }
                         }) {
                             Text("Try Again")
                                 .font(.headline)
@@ -76,6 +80,7 @@ struct ArticleDetailView: View {
                     }
                     .pickerStyle(SegmentedPickerStyle())
                     .padding()
+                    .id("content-picker") // Add stable ID
                     
                     // Content display
                     VStack(alignment: .leading, spacing: 16) {
@@ -96,15 +101,19 @@ struct ArticleDetailView: View {
                         Divider()
                             .padding(.horizontal)
                         
-                        Text(showOriginal ? extracted.content : simplified.simplified)
-                            .font(.body)
-                            .padding()
-                            .background(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(Color(UIColor.systemBackground))
-                                    .shadow(color: Color.black.opacity(0.1), radius: 5)
-                            )
-                            .padding(.horizontal)
+                        ScrollView {
+                            Text(showOriginal ? cleanedOriginalText : simplified.simplified)
+                                .font(.body)
+                                .multilineTextAlignment(.leading)
+                        }
+                        .frame(maxHeight: 400)
+                        .padding()
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color(UIColor.systemBackground))
+                                .shadow(color: Color.black.opacity(0.1), radius: 5)
+                        )
+                        .padding(.horizontal)
                     }
                 } else {
                     // Default view before loading
@@ -115,7 +124,9 @@ struct ArticleDetailView: View {
                         .padding()
                     
                     Button(action: {
-                        loadArticleContent()
+                        Task {
+                            await loadArticleContent()
+                        }
                     }) {
                         HStack {
                             Image(systemName: "arrow.down.doc")
@@ -145,37 +156,110 @@ struct ArticleDetailView: View {
                 .font(.headline)
             }
         )
-        .onAppear {
+        .task {
             // Automatically load the article when the view appears
-            loadArticleContent()
+            await loadArticleContent()
         }
     }
     
-    private func loadArticleContent() {
+    @MainActor
+    private func loadArticleContent() async {
+        // Don't reload if content is already present
+        guard extractedArticle == nil && !hasLoadedContent else { return }
+        
         isLoading = true
         errorMessage = nil
+        hasLoadedContent = true
         
-        authManager.extractArticle(articleUrl: article.link) { result in
-            switch result {
-            case .success(let extracted):
+        print("📘 Loading article content for: \(article.title)")
+
+        do {
+            // Step 1: Fetch and extract the article content (Firestore-first, then API)
+            let extracted = try await authManager.fetchArticleContentAsync(articleId: article.article_id, articleLink: article.link)
+            
+            // Update UI on main thread
+            await MainActor.run {
                 self.extractedArticle = extracted
+                // Cache the cleaned content to avoid recomputing
+                self.cleanedOriginalText = self.cleanedOriginalContent(extracted.content)
+            }
+            
+            // Step 2: Fetch and simplify the content (Firestore-first, then API)
+            let simplified = try await authManager.fetchSimplifiedArticleAsync(articleId: article.article_id, articleUrl: article.link, originalContent: extracted.textContent, language: self.language)
+            
+            // Update UI on main thread
+            await MainActor.run {
+                self.simplifiedArticle = simplified
+            }
+            
+        } catch {
+            // Handle any error from the entire process
+            await MainActor.run {
+                self.errorMessage = "Failed to load article: \(error.localizedDescription)"
+            }
+            print("❌ Article loading failed: \(error.localizedDescription)")
+        }
+        
+        await MainActor.run {
+            self.isLoading = false
+        }
+        
+        recordArticleAsRead()
+    }
+    
+    private func recordArticleAsRead() {
+        // Record that the user has read this article
+        // This is used for tracking reading history, achievements, etc.
+        print("📘 Recording article as read: \(article.title)")
+        
+        // Call the method on the authManager to record the read
+        authManager.recordArticleRead(
+            articleId: article.article_id,
+            title: article.title,
+            language: language
+        )
+    }
+    
+    /// Cleans HTML content for display as plain text
+    private func cleanedOriginalContent(_ htmlContent: String) -> String {
+        // Use NSAttributedString to parse HTML and extract plain text
+        if let data = htmlContent.data(using: .utf8) {
+            let options: [NSAttributedString.DocumentReadingOptionKey: Any] = [
+                .documentType: NSAttributedString.DocumentType.html,
+                .characterEncoding: String.Encoding.utf8.rawValue
+            ]
+            
+            if let attributedString = try? NSAttributedString(data: data, options: options, documentAttributes: nil) {
+                let cleanText = attributedString.string
                 
-                // Now simplify the extracted content
-                self.authManager.simplifyArticle(content: extracted.textContent, language: self.language) { simplifyResult in
-                    switch simplifyResult {
-                    case .success(let simplified):
-                        self.simplifiedArticle = simplified
-                        self.isLoading = false
-                    case .failure(let error):
-                        self.errorMessage = "Failed to simplify article: \(error.localizedDescription)"
-                        self.isLoading = false
-                    }
-                }
+                // Clean up extra whitespace and newlines
+                let trimmed = cleanText
+                    .replacingOccurrences(of: "\n\n\n+", with: "\n\n", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
                 
-            case .failure(let error):
-                self.errorMessage = "Failed to extract article: \(error.localizedDescription)"
-                self.isLoading = false
+                return trimmed.isEmpty ? htmlContent : trimmed
             }
         }
+        
+        // Fallback: Simple HTML tag removal
+        var cleanText = htmlContent
+        
+        // Replace common HTML tags with appropriate formatting
+        cleanText = cleanText.replacingOccurrences(of: "<br>", with: "\n")
+        cleanText = cleanText.replacingOccurrences(of: "<br/>", with: "\n")
+        cleanText = cleanText.replacingOccurrences(of: "<br />", with: "\n")
+        cleanText = cleanText.replacingOccurrences(of: "</p>", with: "\n\n")
+        cleanText = cleanText.replacingOccurrences(of: "</div>", with: "\n")
+        
+        // Remove all remaining HTML tags
+        cleanText = cleanText.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        
+        // Clean up extra whitespace
+        cleanText = cleanText.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        cleanText = cleanText.replacingOccurrences(of: "\n ", with: "\n", options: .regularExpression)
+        cleanText = cleanText.replacingOccurrences(of: " \n", with: "\n", options: .regularExpression)
+        cleanText = cleanText.replacingOccurrences(of: "\n\n\n+", with: "\n\n", options: .regularExpression)
+        
+        return cleanText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

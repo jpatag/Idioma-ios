@@ -71,7 +71,38 @@ struct LoginView: View {
                 }
                 .frame(width: 280, height: 50)
                 .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
-                .padding(.bottom, 60)
+                
+                // Developer options section
+                #if DEBUG
+                VStack(alignment: .center) {
+                    Text("Developer Options")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .padding(.top, 20)
+                    
+                    HStack {
+                        Text("Use Firebase Emulator")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        
+                        Toggle("", isOn: Binding<Bool>(
+                            get: { UserDefaults.standard.bool(forKey: "use_firebase_emulator") },
+                            set: { newValue in
+                                authManager.setUseFirebaseEmulator(newValue)
+                            }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(SwitchToggleStyle(tint: .blue))
+                    }
+                    .padding(.horizontal, 40)
+                    
+                    Text("Restart app after changing this setting")
+                        .font(.caption2)
+                        .foregroundColor(.red)
+                        .padding(.bottom, 5)
+                }
+                .padding(.bottom, 20)
+                #endif
             }
             .padding()
         }

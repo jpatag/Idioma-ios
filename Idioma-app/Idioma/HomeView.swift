@@ -4,11 +4,12 @@ struct HomeView: View {
     @ObservedObject var authManager: FirebaseManager
     @State private var selectedLanguage: String?
     
-    // Define available languages with more subtle colors
-    private let languages = [
-        ("Spanish", "🇪🇸", Color.blue),
-        ("French", "🇫🇷", Color.blue),
-        ("Japanese", "🇯🇵", Color.blue)
+    // Define available countries with their flags and colors
+    private let countries = [
+        ("United States", "🇺🇸", Color.blue),
+        ("Spain", "🇪🇸", Color.blue),
+        ("France", "🇫🇷", Color.blue),
+        ("Japan", "🇯🇵", Color.blue)
     ]
     
     var body: some View {
@@ -45,16 +46,16 @@ struct HomeView: View {
                     
                     // Language selection buttons
                     VStack(spacing: 16) {
-                        ForEach(languages, id: \.0) { language, flag, color in
+                        ForEach(countries, id: \.0) { country, flag, color in
                             NavigationLink(
                                 destination: LanguageDetailView(
-                                    language: language,
+                                    language: country, // Pass the country name as the "language"
                                     flag: flag,
                                     color: color,
                                     authManager: authManager
                                 )
                             ) {
-                                LanguageButton(name: language, flag: flag, color: color)
+                                LanguageButton(name: country, flag: flag, color: color)
                             }
                         }
                     }
@@ -131,7 +132,6 @@ struct LanguageDetailView: View {
     @ObservedObject var authManager: FirebaseManager
     @Environment(\.presentationMode) var presentationMode
     
-    @State private var articles: [NewsArticle] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     
@@ -197,9 +197,9 @@ struct LanguageDetailView: View {
                             ProgressView()
                                 .progressViewStyle(CircularProgressViewStyle())
                                 .scaleEffect(0.7)
-                        } else if articles.isEmpty && errorMessage == nil {
+                        } else if authManager.articles.isEmpty && errorMessage == nil {
                             Button(action: {
-                                fetchArticles()
+                                // Refresh action is now handled by FirebaseManager
                             }) {
                                 Label("Refresh", systemImage: "arrow.clockwise")
                                     .font(.caption)
@@ -223,7 +223,7 @@ struct LanguageDetailView: View {
                                 .multilineTextAlignment(.center)
                             
                             Button(action: {
-                                fetchArticles()
+                                // Retry action is now handled by FirebaseManager
                             }) {
                                 Text("Try Again")
                                     .font(.headline)
@@ -253,11 +253,11 @@ struct LanguageDetailView: View {
                     } else {
                         // Scrollable article list - expanded to use more space
                         List {
-                            if !articles.isEmpty {
-                                ForEach(articles) { article in
+                            if !authManager.articles.isEmpty {
+                                ForEach(authManager.articles) { article in
                                     ArticleRowView(article: article, color: color, language: language, authManager: authManager)
                                 }
-                            } else if !isLoading {
+                            } else if !authManager.isLoadingArticles {
                                 ForEach(exampleArticles) { article in
                                     ArticleRowView(article: article, color: color, language: language, authManager: authManager)
                                 }
@@ -330,28 +330,9 @@ struct LanguageDetailView: View {
             }
         )
         .onAppear {
-            // Save the selected language
+            // Save the selected language and fetch articles.
+            // The view will automatically update from the authManager's @Published articles property.
             authManager.setLanguage(language)
-            
-            // Fetch articles when the view appears
-            fetchArticles()
-        }
-    }
-    
-    private func fetchArticles() {
-        isLoading = true
-        errorMessage = nil
-        
-        authManager.fetchNewsForLanguage(language: language) { result in
-            isLoading = false
-            
-            switch result {
-            case .success(let newsArticles):
-                self.articles = newsArticles
-            case .failure(let error):
-                self.errorMessage = "Couldn't load articles: \(error.localizedDescription)"
-                print("Error fetching articles: \(error)")
-            }
         }
     }
 }
@@ -360,7 +341,7 @@ struct LanguageDetailView: View {
 struct ExampleArticle: Identifiable {
     let id: String
     let title: String
-    let description: String
+    let description: String?
     let link: String
 }
 

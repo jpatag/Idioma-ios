@@ -14,5 +14,19 @@ service cloud.firestore {
       // update your rules.
       allow read, write: if request.time < timestamp.date(2025, 8, 14);
     }
+
+    // Allow read access to articles and simplified articles for any authenticated user
+    match /articles/{articleId} {
+      allow read: if request.auth != null;
+    }
+    
+    match /simplifiedArticles/{articleId} {
+      allow read: if request.auth != null;
+    }
+
+    // Allow read access to article content for any authenticated user
+    match /articleContent/{articleId} {
+      allow read: if request.auth != null;
+    }
   }
 }

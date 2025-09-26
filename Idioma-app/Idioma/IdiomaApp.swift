@@ -17,18 +17,25 @@ class AppDelegate: NSObject, UIApplicationDelegate {
                    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
     FirebaseApp.configure()
     
-    // --- Connect to local emulators for testing ---
+    // --- Connect to local emulators for testing (if enabled) ---
     #if DEBUG
-    print("Connecting to local Firebase emulators.")
-    Auth.auth().useEmulator(withHost: "127.0.0.1", port: 9099)
+    // Check if emulator mode is enabled via UserDefaults
+    let useEmulator = UserDefaults.standard.bool(forKey: "use_firebase_emulator")
     
-    let settings = Firestore.firestore().settings
-    settings.host = "127.0.0.1:8080"
-    settings.isSSLEnabled = false
-    settings.isPersistenceEnabled = false // Useful for testing
-    Firestore.firestore().settings = settings
-    
-    Functions.functions().useEmulator(withHost: "127.0.0.1", port: 5001)
+    if useEmulator {
+        print("Connecting to local Firebase emulators.")
+        Auth.auth().useEmulator(withHost: "127.0.0.1", port: 9099)
+        
+        let settings = Firestore.firestore().settings
+        settings.host = "127.0.0.1:8080"
+        settings.isSSLEnabled = false
+        settings.isPersistenceEnabled = false // Useful for testing
+        Firestore.firestore().settings = settings
+        
+        Functions.functions().useEmulator(withHost: "127.0.0.1", port: 5001)
+    } else {
+        print("Using Firebase production services.")
+    }
     #endif
     
     return true
