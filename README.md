@@ -1,5 +1,17 @@
 <div align="center">
 
+<table>
+<tr>
+<td width="50%" align="center">
+<img src="idioma.png" alt="Idioma Logo" width="300"/>
+</td>
+<td width="50%" align="center">
+<img src="demo screenshot.png" alt="Demo Screenshot" width="200"/>
+</td>
+</tr>
+</table>
+
+
 # 🌍 Idioma
 
 ### *Learn Languages Through Real News*
@@ -12,8 +24,6 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
 
 🇺🇸 **English** • 🇪🇸 **Spanish** • 🇫🇷 **French** • 🇯🇵 **Japanese**
-
-[View Demo](#-demo) • [Features](#-what-it-does)
 
 </div>
 
