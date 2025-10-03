@@ -96,10 +96,6 @@ Sign in with Google to save your preferences and reading history. Your data is p
 
 ---
 
-## 💻 Demo
-
-> *Demo screenshots and video coming soon*
-
 **Key User Flows:**
 1. 🔐 Sign in with Google
 2. 🌍 Select your target language
