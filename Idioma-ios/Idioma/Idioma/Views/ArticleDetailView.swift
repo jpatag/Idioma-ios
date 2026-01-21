@@ -230,6 +230,10 @@ struct ArticleDetailView: View {
         isLoading = true
         errorMessage = nil
         
+        // Get the article's language name for simplification (use full name for better AI understanding)
+        let articleLanguage = article.languageName ?? article.language ?? authService.targetLanguage
+        print("📝 [ArticleDetail] Loading article with language: \(articleLanguage)")
+        
         Task {
             do {
                 // First extract the article content
@@ -239,10 +243,11 @@ struct ArticleDetailView: View {
                     self.articleContent = content
                 }
                 
-                // Then simplify for the selected level
+                // Then simplify for the selected level, keeping the original language
                 let simplified = try await APIService.shared.simplifyArticle(
                     url: urlString,
-                    level: currentLevel
+                    level: currentLevel,
+                    language: articleLanguage
                 )
                 
                 await MainActor.run {
@@ -262,13 +267,18 @@ struct ArticleDetailView: View {
     private func simplifyForLevel(_ level: CEFRLevel) {
         guard let urlString = article.link else { return }
         
+        // Get the article's language name for simplification (use full name for better AI understanding)
+        let articleLanguage = article.languageName ?? article.language ?? authService.targetLanguage
+        print("📝 [ArticleDetail] Simplifying article for level \(level.rawValue) in language: \(articleLanguage)")
+        
         isSimplifying = true
         
         Task {
             do {
                 let simplified = try await APIService.shared.simplifyArticle(
                     url: urlString,
-                    level: level
+                    level: level,
+                    language: articleLanguage
                 )
                 
                 await MainActor.run {

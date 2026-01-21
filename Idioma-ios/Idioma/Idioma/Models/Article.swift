@@ -48,6 +48,66 @@ struct Article: Codable, Identifiable {
     var sourceDisplay: String {
         return source_name ?? source_id ?? "Unknown source"
     }
+    
+    // Map NewsData API language strings to ISO codes
+    // NewsData returns full names like "spanish", "french" etc.
+    var languageCode: String? {
+        guard let lang = language?.lowercased() else { return nil }
+        
+        let languageMap: [String: String] = [
+            "spanish": "es",
+            "french": "fr",
+            "german": "de",
+            "italian": "it",
+            "portuguese": "pt",
+            "english": "en",
+            "chinese": "zh",
+            "japanese": "ja",
+            "korean": "ko",
+            "russian": "ru",
+            "arabic": "ar",
+            "dutch": "nl",
+            "swedish": "sv",
+            "norwegian": "no",
+            "danish": "da",
+            "finnish": "fi",
+            "polish": "pl",
+            "turkish": "tr",
+            "greek": "el",
+            "hebrew": "he",
+            "hindi": "hi",
+            "thai": "th",
+            "vietnamese": "vi",
+            "indonesian": "id",
+            "malay": "ms",
+            "tagalog": "tl",
+            // If it's already a code (e.g., "es"), return as-is
+            "es": "es", "fr": "fr", "de": "de", "it": "it", "pt": "pt",
+            "en": "en", "zh": "zh", "ja": "ja", "ko": "ko", "ru": "ru"
+        ]
+        
+        return languageMap[lang] ?? lang
+    }
+    
+    // Get full language name for display and prompts
+    var languageName: String? {
+        guard let lang = language?.lowercased() else { return nil }
+        
+        let nameMap: [String: String] = [
+            "es": "Spanish", "spanish": "Spanish",
+            "fr": "French", "french": "French",
+            "de": "German", "german": "German",
+            "it": "Italian", "italian": "Italian",
+            "pt": "Portuguese", "portuguese": "Portuguese",
+            "en": "English", "english": "English",
+            "zh": "Chinese", "chinese": "Chinese",
+            "ja": "Japanese", "japanese": "Japanese",
+            "ko": "Korean", "korean": "Korean",
+            "ru": "Russian", "russian": "Russian"
+        ]
+        
+        return nameMap[lang] ?? language?.capitalized
+    }
 }
 
 // MARK: - Article Content

@@ -94,7 +94,7 @@ struct SettingsView: View {
                         SettingsRow(
                             icon: "globe",
                             title: "Native Language",
-                            subtitle: Language.allLanguages.first { $0.id == authService.preferences.nativeLanguage }?.name ?? "English",
+                            subtitle: Language.allLanguages.first { $0.id == authService.nativeLanguage }?.name ?? "English",
                             iconBackgroundColor: iconBackgroundColor
                         ) {
                             showNativeLanguagePicker = true
@@ -107,7 +107,7 @@ struct SettingsView: View {
                         SettingsRow(
                             icon: "character.book.closed",
                             title: "Target Language",
-                            subtitle: Language.allLanguages.first { $0.id == authService.preferences.targetLanguage }?.name ?? "Spanish",
+                            subtitle: Language.allLanguages.first { $0.id == authService.targetLanguage }?.name ?? "Spanish",
                             iconBackgroundColor: iconBackgroundColor
                         ) {
                             showTargetLanguagePicker = true
@@ -120,7 +120,7 @@ struct SettingsView: View {
                         SettingsRow(
                             icon: "chart.bar",
                             title: "Difficulty Level",
-                            subtitle: CEFRLevel(rawValue: authService.preferences.preferredLevel)?.displayName ?? "Intermediate",
+                            subtitle: CEFRLevel(rawValue: authService.preferredLevel)?.displayName ?? "Intermediate",
                             iconBackgroundColor: iconBackgroundColor
                         ) {
                             showLevelPicker = true
@@ -202,7 +202,7 @@ struct SettingsView: View {
         .sheet(isPresented: $showNativeLanguagePicker) {
             LanguagePickerSheet(
                 title: "Select Native Language",
-                selectedLanguage: authService.preferences.nativeLanguage,
+                selectedLanguage: authService.nativeLanguage,
                 primaryColor: primaryColor
             ) { language in
                 authService.updatePreferences(nativeLanguage: language.id)
@@ -211,7 +211,7 @@ struct SettingsView: View {
         .sheet(isPresented: $showTargetLanguagePicker) {
             LanguagePickerSheet(
                 title: "Select Target Language",
-                selectedLanguage: authService.preferences.targetLanguage,
+                selectedLanguage: authService.targetLanguage,
                 primaryColor: primaryColor
             ) { language in
                 authService.updatePreferences(targetLanguage: language.id)
@@ -219,15 +219,15 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showLevelPicker) {
             LevelPickerSheet(
-                selectedLevel: authService.preferences.preferredLevel,
+                selectedLevel: authService.preferredLevel,
                 primaryColor: primaryColor
             ) { level in
                 authService.updatePreferences(level: level.rawValue)
             }
         }
         .onAppear {
-            notificationsEnabled = authService.preferences.notificationsEnabled
-            darkModeEnabled = authService.preferences.darkModeEnabled
+            notificationsEnabled = authService.notificationsEnabled
+            darkModeEnabled = authService.darkModeEnabled
         }
     }
 }

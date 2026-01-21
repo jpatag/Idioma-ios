@@ -28,6 +28,9 @@ class APIService {
     ///   - language: Language code (e.g., "es" for Spanish)
     /// - Returns: Array of Article objects
     func getNews(country: String, language: String) async throws -> [Article] {
+        print("\n🔵 [API] getNews called")
+        print("📍 Parameters: country=\(country), language=\(language)")
+        
         // Build the URL with query parameters
         var components = URLComponents(string: "\(baseURL)/getNews")!
         components.queryItems = [
@@ -36,34 +39,57 @@ class APIService {
         ]
         
         guard let url = components.url else {
+            print("❌ [API] Invalid URL")
             throw APIError.invalidURL
         }
+        
+        print("🌐 [API] Request URL: \(url.absoluteString)")
         
         // Make the request
         let (data, response) = try await URLSession.shared.data(from: url)
         
+        print("📦 [API] Response received - Data size: \(data.count) bytes")
+        
         // Check for HTTP errors
         guard let httpResponse = response as? HTTPURLResponse else {
+            print("❌ [API] Invalid response type")
             throw APIError.invalidResponse
         }
         
+        print("📊 [API] HTTP Status: \(httpResponse.statusCode)")
+        
         guard httpResponse.statusCode == 200 else {
+            print("❌ [API] HTTP Error: \(httpResponse.statusCode)")
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("📄 [API] Error response body: \(responseString)")
+            }
             throw APIError.httpError(statusCode: httpResponse.statusCode)
         }
         
         // Decode the response
         let decoder = JSONDecoder()
         
+        // Log raw response for debugging
+        if let responseString = String(data: data, encoding: .utf8) {
+            print("📄 [API] Raw response (first 500 chars): \(String(responseString.prefix(500)))")
+        }
+        
         // Try to decode as NewsResponse first (has "results" key)
         if let newsResponse = try? decoder.decode(NewsResponse.self, from: data) {
+            print("✅ [API] Successfully decoded NewsResponse with \(newsResponse.results.count) articles")
+            newsResponse.results.forEach { article in
+                print("   📰 Article: \(article.title ?? "No title")")
+            }
             return newsResponse.results
         }
         
         // Fallback: try to decode direct array
         if let articles = try? decoder.decode([Article].self, from: data) {
+            print("✅ [API] Successfully decoded article array with \(articles.count) articles")
             return articles
         }
         
+        print("❌ [API] Failed to decode response as NewsResponse or [Article]")
         throw APIError.decodingError
     }
     
@@ -72,27 +98,44 @@ class APIService {
     /// - Parameter url: The article URL to extract content from
     /// - Returns: ArticleContent with cleaned HTML and metadata
     func extractArticle(url: String) async throws -> ArticleContent {
+        print("\n🔵 [API] extractArticle called")
+        print("📍 URL: \(url)")
+        
         var components = URLComponents(string: "\(baseURL)/extractArticle")!
         components.queryItems = [
             URLQueryItem(name: "url", value: url)
         ]
         
         guard let requestURL = components.url else {
+            print("❌ [API] Invalid URL")
             throw APIError.invalidURL
         }
         
+        print("🌐 [API] Request URL: \(requestURL.absoluteString)")
+        
         let (data, response) = try await URLSession.shared.data(from: requestURL)
         
+        print("📦 [API] Response received - Data size: \(data.count) bytes")
+        
         guard let httpResponse = response as? HTTPURLResponse else {
+            print("❌ [API] Invalid response type")
             throw APIError.invalidResponse
         }
         
+        print("📊 [API] HTTP Status: \(httpResponse.statusCode)")
+        
         guard httpResponse.statusCode == 200 else {
+            print("❌ [API] HTTP Error: \(httpResponse.statusCode)")
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("📄 [API] Error response: \(responseString)")
+            }
             throw APIError.httpError(statusCode: httpResponse.statusCode)
         }
         
         let decoder = JSONDecoder()
-        return try decoder.decode(ArticleContent.self, from: data)
+        let content = try decoder.decode(ArticleContent.self, from: data)
+        print("✅ [API] Successfully extracted article: \(content.title ?? "No title")")
+        return content
     }
     
     // MARK: - Simplify Article
@@ -100,31 +143,55 @@ class APIService {
     /// - Parameters:
     ///   - url: The article URL (must have been extracted first)
     ///   - level: CEFR level (A2, B1, B2, C1)
+    ///   - language: Target language code (e.g., "es" for Spanish) to keep article in original language
     /// - Returns: SimplifiedArticle with adapted content
-    func simplifyArticle(url: String, level: CEFRLevel) async throws -> SimplifiedArticle {
+    func simplifyArticle(url: String, level: CEFRLevel, language: String? = nil) async throws -> SimplifiedArticle {
+        print("\n🔵 [API] simplifyArticle called")
+        print("📍 URL: \(url), Level: \(level.rawValue), Language: \(language ?? "not specified")")
+        
         var components = URLComponents(string: "\(baseURL)/simplifyArticle")!
-        components.queryItems = [
+        var queryItems = [
             URLQueryItem(name: "url", value: url),
             URLQueryItem(name: "level", value: level.rawValue),
             URLQueryItem(name: "stream", value: "false") // Non-streaming for simplicity
         ]
         
+        // Add language parameter if provided to keep article in original language
+        if let language = language {
+            queryItems.append(URLQueryItem(name: "language", value: language))
+        }
+        components.queryItems = queryItems
+        
         guard let requestURL = components.url else {
+            print("❌ [API] Invalid URL")
             throw APIError.invalidURL
         }
         
+        print("🌐 [API] Request URL: \(requestURL.absoluteString)")
+        
         let (data, response) = try await URLSession.shared.data(from: requestURL)
         
+        print("📦 [API] Response received - Data size: \(data.count) bytes")
+        
         guard let httpResponse = response as? HTTPURLResponse else {
+            print("❌ [API] Invalid response type")
             throw APIError.invalidResponse
         }
         
+        print("📊 [API] HTTP Status: \(httpResponse.statusCode)")
+        
         guard httpResponse.statusCode == 200 else {
+            print("❌ [API] HTTP Error: \(httpResponse.statusCode)")
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("📄 [API] Error response: \(responseString)")
+            }
             throw APIError.httpError(statusCode: httpResponse.statusCode)
         }
         
         let decoder = JSONDecoder()
-        return try decoder.decode(SimplifiedArticle.self, from: data)
+        let simplified = try decoder.decode(SimplifiedArticle.self, from: data)
+        print("✅ [API] Successfully simplified article")
+        return simplified
     }
 }
 

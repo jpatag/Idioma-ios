@@ -2,181 +2,274 @@
 //  AuthService.swift
 //  Idioma
 //
-//  Authentication service for handling user login/logout.
-//  Currently uses a simple mock implementation.
-//  Replace with Firebase Auth for production.
+//  Authentication service using Firebase Auth + Google Sign-In.
 //
 
 import Foundation
-import SwiftUI
+import Combine
+import FirebaseAuth
+import GoogleSignIn
+import FirebaseCore
 
 // MARK: - Auth Service
-class AuthService: ObservableObject {
-    // Published properties that update the UI automatically
+final class AuthService: ObservableObject {
+    // Published properties that update the UI
     @Published var isAuthenticated: Bool = false
-    @Published var currentUser: User?
+    @Published var currentUser: User? = nil
     @Published var isLoading: Bool = false
-    @Published var errorMessage: String?
+    @Published var errorMessage: String? = nil
     @Published var hasCompletedOnboarding: Bool = false
     
-    // User preferences stored locally
-    @Published var preferences = UserPreferences()
+    // Firebase Auth listener
+    private var authStateListener: AuthStateDidChangeListenerHandle?
     
-    init() {
-        // Check if user was previously logged in
-        checkAuthState()
+    // UserDefaults for preferences
+    private let defaults = UserDefaults.standard
+    
+    // Preference keys
+    private enum Keys {
+        static let nativeLanguage = "nativeLanguage"
+        static let targetLanguage = "targetLanguage"
+        static let preferredLevel = "preferredLevel"
+        static let notificationsEnabled = "notificationsEnabled"
+        static let darkModeEnabled = "darkModeEnabled"
+        static let hasCompletedOnboarding = "hasCompletedOnboarding"
     }
     
-    // MARK: - Check Auth State
-    /// Checks if user was previously logged in (from UserDefaults)
-    private func checkAuthState() {
-        // In production, check Firebase Auth state here
-        let wasLoggedIn = UserDefaults.standard.bool(forKey: "isLoggedIn")
-        if wasLoggedIn {
-            // Restore user session
-            isAuthenticated = true
-            hasCompletedOnboarding = preferences.hasCompletedOnboarding
+    // Computed preferences properties
+    var nativeLanguage: String {
+        get { defaults.string(forKey: Keys.nativeLanguage) ?? "en" }
+        set { defaults.set(newValue, forKey: Keys.nativeLanguage) }
+    }
+    
+    var targetLanguage: String {
+        get { defaults.string(forKey: Keys.targetLanguage) ?? "es" }
+        set { defaults.set(newValue, forKey: Keys.targetLanguage) }
+    }
+    
+    var preferredLevel: String {
+        get { defaults.string(forKey: Keys.preferredLevel) ?? "B1" }
+        set { defaults.set(newValue, forKey: Keys.preferredLevel) }
+    }
+    
+    var notificationsEnabled: Bool {
+        get { defaults.bool(forKey: Keys.notificationsEnabled) }
+        set { defaults.set(newValue, forKey: Keys.notificationsEnabled) }
+    }
+    
+    var darkModeEnabled: Bool {
+        get { defaults.bool(forKey: Keys.darkModeEnabled) }
+        set { defaults.set(newValue, forKey: Keys.darkModeEnabled) }
+    }
+    
+    init() {
+        // Listen for Firebase auth state changes
+        authStateListener = Auth.auth().addStateDidChangeListener { [weak self] _, firebaseUser in
+            guard let self = self else { return }
             
-            // Create a mock user for now
-            currentUser = User(
-                id: "mock-user-id",
-                email: UserDefaults.standard.string(forKey: "userEmail") ?? "user@example.com",
-                displayName: UserDefaults.standard.string(forKey: "userName") ?? "User",
-                profileImageUrl: nil,
-                nativeLanguage: preferences.nativeLanguage,
-                targetLanguage: preferences.targetLanguage,
-                preferredLevel: preferences.preferredLevel,
-                notificationsEnabled: preferences.notificationsEnabled,
-                darkModeEnabled: preferences.darkModeEnabled
-            )
+            DispatchQueue.main.async {
+                if let firebaseUser = firebaseUser {
+                    // User is signed in
+                    self.currentUser = User(
+                        id: firebaseUser.uid,
+                        email: firebaseUser.email ?? "",
+                        displayName: firebaseUser.displayName ?? "User",
+                        profileImageUrl: firebaseUser.photoURL?.absoluteString,
+                        nativeLanguage: self.nativeLanguage,
+                        targetLanguage: self.targetLanguage,
+                        preferredLevel: self.preferredLevel,
+                        notificationsEnabled: self.notificationsEnabled,
+                        darkModeEnabled: self.darkModeEnabled
+                    )
+                    self.isAuthenticated = true
+                    self.hasCompletedOnboarding = self.defaults.bool(forKey: Keys.hasCompletedOnboarding)
+                } else {
+                    // User is signed out
+                    self.currentUser = nil
+                    self.isAuthenticated = false
+                }
+                self.isLoading = false
+            }
+        }
+    }
+    
+    deinit {
+        // Remove listener when AuthService is deallocated
+        if let listener = authStateListener {
+            Auth.auth().removeStateDidChangeListener(listener)
         }
     }
     
     // MARK: - Sign In with Google
-    /// Signs in with Google (placeholder - implement with Firebase)
     func signInWithGoogle() {
         isLoading = true
         errorMessage = nil
         
-        // Simulate network delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            guard let self = self else { return }
-            
-            // Mock successful login
-            self.currentUser = User(
-                id: "google-user-123",
-                email: "user@gmail.com",
-                displayName: "Google User",
-                profileImageUrl: nil,
-                nativeLanguage: "en",
-                targetLanguage: "es",
-                preferredLevel: "B1",
-                notificationsEnabled: true,
-                darkModeEnabled: false
-            )
-            
-            // Save login state
-            UserDefaults.standard.set(true, forKey: "isLoggedIn")
-            UserDefaults.standard.set(self.currentUser?.email, forKey: "userEmail")
-            UserDefaults.standard.set(self.currentUser?.displayName, forKey: "userName")
-            
-            self.isAuthenticated = true
-            self.hasCompletedOnboarding = self.preferences.hasCompletedOnboarding
-            self.isLoading = false
+        // Get the client ID from Firebase
+        guard let clientID = FirebaseApp.app()?.options.clientID else {
+            errorMessage = "Firebase not configured properly"
+            isLoading = false
+            return
         }
         
-        // TODO: Replace with actual Firebase Google Sign-In
-        // 1. Add Firebase SDK to your project
-        // 2. Add GoogleSignIn SDK
-        // 3. Configure in GoogleService-Info.plist
-        // 4. Use GIDSignIn.sharedInstance.signIn(...)
+        // Create Google Sign-In configuration
+        let config = GIDConfiguration(clientID: clientID)
+        GIDSignIn.sharedInstance.configuration = config
+        
+        // Get the root view controller
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootViewController = windowScene.windows.first?.rootViewController else {
+            errorMessage = "Cannot find root view controller"
+            isLoading = false
+            return
+        }
+        
+        // Start Google Sign-In flow
+        GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController) { [weak self] result, error in
+            guard let self = self else { return }
+            
+            if let error = error {
+                DispatchQueue.main.async {
+                    self.errorMessage = error.localizedDescription
+                    self.isLoading = false
+                }
+                return
+            }
+            
+            guard let user = result?.user,
+                  let idToken = user.idToken?.tokenString else {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Failed to get Google credentials"
+                    self.isLoading = false
+                }
+                return
+            }
+            
+            // Create Firebase credential from Google token
+            let credential = GoogleAuthProvider.credential(
+                withIDToken: idToken,
+                accessToken: user.accessToken.tokenString
+            )
+            
+            // Sign in to Firebase with Google credential
+            Auth.auth().signIn(with: credential) { [weak self] authResult, error in
+                guard let self = self else { return }
+                
+                DispatchQueue.main.async {
+                    if let error = error {
+                        self.errorMessage = error.localizedDescription
+                        self.isLoading = false
+                    }
+                    // Success is handled by authStateListener
+                }
+            }
+        }
     }
     
     // MARK: - Sign In with Email
-    /// Signs in with email and password (placeholder - implement with Firebase)
     func signInWithEmail(email: String, password: String) {
         isLoading = true
         errorMessage = nil
         
-        // Basic validation
         guard !email.isEmpty, !password.isEmpty else {
             errorMessage = "Please enter email and password"
             isLoading = false
             return
         }
         
-        // Simulate network delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+        Auth.auth().signIn(withEmail: email, password: password) { [weak self] _, error in
             guard let self = self else { return }
             
-            // Mock successful login
-            self.currentUser = User(
-                id: "email-user-456",
-                email: email,
-                displayName: email.components(separatedBy: "@").first ?? "User",
-                profileImageUrl: nil,
-                nativeLanguage: "en",
-                targetLanguage: "es",
-                preferredLevel: "B1",
-                notificationsEnabled: true,
-                darkModeEnabled: false
-            )
-            
-            // Save login state
-            UserDefaults.standard.set(true, forKey: "isLoggedIn")
-            UserDefaults.standard.set(email, forKey: "userEmail")
-            UserDefaults.standard.set(self.currentUser?.displayName, forKey: "userName")
-            
-            self.isAuthenticated = true
-            self.hasCompletedOnboarding = self.preferences.hasCompletedOnboarding
-            self.isLoading = false
+            DispatchQueue.main.async {
+                if let error = error {
+                    self.errorMessage = error.localizedDescription
+                    self.isLoading = false
+                }
+                // Success is handled by authStateListener
+            }
+        }
+    }
+    
+    // MARK: - Sign Up with Email
+    func signUpWithEmail(email: String, password: String) {
+        isLoading = true
+        errorMessage = nil
+        
+        guard !email.isEmpty, !password.isEmpty else {
+            errorMessage = "Please enter email and password"
+            isLoading = false
+            return
         }
         
-        // TODO: Replace with Firebase Auth
-        // Auth.auth().signIn(withEmail: email, password: password) { result, error in ... }
+        Auth.auth().createUser(withEmail: email, password: password) { [weak self] _, error in
+            guard let self = self else { return }
+            
+            DispatchQueue.main.async {
+                if let error = error {
+                    self.errorMessage = error.localizedDescription
+                    self.isLoading = false
+                }
+                // Success is handled by authStateListener
+            }
+        }
     }
     
     // MARK: - Sign Out
-    /// Signs out the current user
     func signOut() {
-        // Clear user data
-        currentUser = nil
-        isAuthenticated = false
-        
-        // Clear stored login state
-        UserDefaults.standard.set(false, forKey: "isLoggedIn")
-        UserDefaults.standard.removeObject(forKey: "userEmail")
-        UserDefaults.standard.removeObject(forKey: "userName")
-        
-        // TODO: Replace with Firebase Auth
-        // try? Auth.auth().signOut()
+        do {
+            try Auth.auth().signOut()
+            GIDSignIn.sharedInstance.signOut()
+            // State change handled by authStateListener
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
     
     // MARK: - Complete Onboarding
-    /// Called when user finishes language selection
     func completeOnboarding(targetLanguage: String) {
-        preferences.targetLanguage = targetLanguage
-        preferences.hasCompletedOnboarding = true
+        self.targetLanguage = targetLanguage
+        defaults.set(true, forKey: Keys.hasCompletedOnboarding)
         hasCompletedOnboarding = true
-        
-        // Update current user
         currentUser?.targetLanguage = targetLanguage
     }
     
     // MARK: - Update Preferences
-    /// Updates user preferences
     func updatePreferences(nativeLanguage: String? = nil, targetLanguage: String? = nil, level: String? = nil) {
         if let native = nativeLanguage {
-            preferences.nativeLanguage = native
+            self.nativeLanguage = native
             currentUser?.nativeLanguage = native
         }
         if let target = targetLanguage {
-            preferences.targetLanguage = target
+            self.targetLanguage = target
             currentUser?.targetLanguage = target
         }
         if let level = level {
-            preferences.preferredLevel = level
+            self.preferredLevel = level
             currentUser?.preferredLevel = level
+        }
+        objectWillChange.send()
+    }
+    
+    // MARK: - Get Firebase ID Token (for API calls)
+    func getIDToken() async throws -> String {
+        guard let user = Auth.auth().currentUser else {
+            throw AuthError.notSignedIn
+        }
+        return try await user.getIDToken()
+    }
+}
+
+// MARK: - Auth Errors
+enum AuthError: Error, LocalizedError {
+    case notSignedIn
+    case invalidCredential
+    
+    var errorDescription: String? {
+        switch self {
+        case .notSignedIn:
+            return "User is not signed in"
+        case .invalidCredential:
+            return "Invalid credentials"
         }
     }
 }

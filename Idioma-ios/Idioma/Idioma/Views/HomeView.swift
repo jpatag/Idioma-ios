@@ -154,8 +154,8 @@ struct HomeView: View {
         .onAppear {
             // Load articles when view appears
             if articles.isEmpty {
-                selectedLanguage = authService.preferences.targetLanguage
-                if let level = CEFRLevel(rawValue: authService.preferences.preferredLevel) {
+                selectedLanguage = authService.targetLanguage
+                if let level = CEFRLevel(rawValue: authService.preferredLevel) {
                     selectedLevel = level
                 }
                 loadArticles()
@@ -165,25 +165,37 @@ struct HomeView: View {
     
     // MARK: - Load Articles
     private func loadArticles() {
+        print("\n🏠 [HomeView] loadArticles started")
+        print("📍 Language: \(selectedLanguage), Level: \(selectedLevel.rawValue)")
+        
         isLoading = true
         errorMessage = nil
         
         Task {
             do {
                 let country = Country.defaultCountry(for: selectedLanguage)
+                print("🌍 [HomeView] Country resolved: \(country)")
+                
                 let fetchedArticles = try await APIService.shared.getNews(
                     country: country,
                     language: selectedLanguage
                 )
                 
+                print("✅ [HomeView] Received \(fetchedArticles.count) articles")
+                
                 await MainActor.run {
                     self.articles = fetchedArticles
                     self.isLoading = false
+                    print("🎯 [HomeView] UI updated with \(fetchedArticles.count) articles")
                 }
             } catch {
+                print("❌ [HomeView] Error loading articles: \(error)")
+                print("📝 [HomeView] Error details: \(error.localizedDescription)")
+                
                 await MainActor.run {
                     self.errorMessage = error.localizedDescription
                     self.isLoading = false
+                    print("🎯 [HomeView] UI updated with error message")
                 }
             }
         }

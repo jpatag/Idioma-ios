@@ -2,7 +2,54 @@
 
 A language learning app that presents news articles in your target language, simplified to your reading level using AI.
 
-## 📱 Project Structure
+## � Firebase & Google Sign-In Setup
+
+### Step 1: Add Firebase SDK
+
+1. In Xcode, go to **File** → **Add Package Dependencies**
+2. Enter URL: `https://github.com/firebase/firebase-ios-sdk`
+3. Click **Add Package**
+4. Select these libraries:
+   - ✅ `FirebaseAuth`
+   - ✅ `FirebaseCore`
+5. Click **Add Package**
+
+### Step 2: Add Google Sign-In SDK
+
+1. In Xcode, go to **File** → **Add Package Dependencies**
+2. Enter URL: `https://github.com/google/GoogleSignIn-iOS`
+3. Click **Add Package**
+4. Select:
+   - ✅ `GoogleSignIn`
+5. Click **Add Package**
+
+### Step 3: Add GoogleService-Info.plist
+
+1. Go to [Firebase Console](https://console.firebase.google.com)
+2. Select your project (idioma-87bed)
+3. Click the iOS app (or add one if needed)
+4. Download `GoogleService-Info.plist`
+5. Drag it into your Xcode project (same level as `IdiomaApp.swift`)
+6. ✅ Check "Copy items if needed"
+7. ✅ Check your app target
+
+### Step 4: Add URL Scheme for Google Sign-In
+
+1. Open `GoogleService-Info.plist` in Xcode
+2. Find `REVERSED_CLIENT_ID` value (looks like `com.googleusercontent.apps.123456...`)
+3. Go to your **Target** → **Info** → **URL Types**
+4. Click **+** to add new URL Type
+5. Paste the `REVERSED_CLIENT_ID` value into **URL Schemes**
+
+### Step 5: Build & Run
+
+1. Clean build: **⌘⇧K**
+2. Build: **⌘B**
+3. Run: **⌘R**
+
+---
+
+## �📱 Project Structure
 
 ```
 Idioma-ios/

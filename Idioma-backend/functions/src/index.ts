@@ -59,10 +59,23 @@ dotenv.config({path: path.join(__dirname, "../.env"), debug: true});
 const newsAPIKey = process.env.NEWS_API_KEY;
 logger.info("Loaded NEWS_API_KEY:", newsAPIKey ? "[SET]" : "[NOT SET]");
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Initialize OpenAI client lazily to avoid errors during local analysis
+let openai: OpenAI | null = null;
+/**
+ * Get or initialize the OpenAI client.
+ * @return {OpenAI} The OpenAI client instance.
+ */
+function getOpenAI(): OpenAI {
+  if (!openai) {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OPENAI_API_KEY is not set");
+    }
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return openai;
+}
 logger.info("Loaded OPENAI_API_KEY:", process.env.OPENAI_API_KEY ? "[SET]" : "[NOT SET]");
 
 const db = admin.firestore();
@@ -440,14 +453,25 @@ export const extractArticle = onRequest(async (request, response) => {
 
 // Function to simplify article content using OpenAI for different CEFR levels
 export const simplifyArticle = onRequest(async (request, response) => {
-  const {url, level = "B1", stream = "false"} = request.query as { url?: string; level?: string; stream?: string };
-  const {url: bodyUrl, level: bodyLevel, stream: bodyStream} = request.body || {};
+  const {url, level = "B1", stream = "false", language = ""} = request.query as {
+    url?: string;
+    level?: string;
+    stream?: string;
+    language?: string;
+  };
+  const {url: bodyUrl, level: bodyLevel, stream: bodyStream, language: bodyLanguage} = request.body || {};
 
   const articleUrl = url || bodyUrl;
   const cefrLevel = level || bodyLevel || "B1";
   const enableStream = (stream || bodyStream || "false").toLowerCase() === "true";
+  const targetLanguage = language || bodyLanguage || "";
 
-  logger.info("simplifyArticle called", {url: articleUrl, level: cefrLevel, stream: enableStream});
+  logger.info("simplifyArticle called", {
+    url: articleUrl,
+    level: cefrLevel,
+    stream: enableStream,
+    language: targetLanguage,
+  });
 
   if (!articleUrl) {
     response.status(400).json({error: "Missing 'url' parameter"});
@@ -460,20 +484,37 @@ export const simplifyArticle = onRequest(async (request, response) => {
   }
 
   try {
-    // 1) Check cache for this URL + level combination (24 hour cache)
+    // 1) Check cache for this URL + level + language combination (24 hour cache)
     const twentyFourHoursAgo = Timestamp.fromDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
-    const cacheQuery = db
-      .collection("simplifiedArticles")
-      .where("originalUrl", "==", articleUrl)
-      .where("cefrLevel", "==", cefrLevel)
-      .where("timestamp", ">", twentyFourHoursAgo)
-      .orderBy("timestamp", "desc")
-      .limit(1);
 
-    const cached = await cacheQuery.get();
+    // Build cache query - include language to ensure we return content in the right language
+    let cached;
+    try {
+      const cacheQuery = db
+        .collection("simplifiedArticles")
+        .where("originalUrl", "==", articleUrl)
+        .where("cefrLevel", "==", cefrLevel)
+        .where("language", "==", targetLanguage || "")
+        .where("timestamp", ">", twentyFourHoursAgo)
+        .orderBy("timestamp", "desc")
+        .limit(1);
+
+      cached = await cacheQuery.get();
+    } catch (cacheError) {
+      // Index might not be ready yet, skip cache and regenerate
+      logger.warn("Cache query failed (index may be building), regenerating", {
+        error: cacheError instanceof Error ? cacheError.message : cacheError,
+      });
+      cached = {empty: true, docs: []};
+    }
+
     if (!cached.empty) {
       const data = cached.docs[0].data();
-      logger.info("Returning cached simplified article", {url: articleUrl, level: cefrLevel});
+      logger.info("Returning cached simplified article", {
+        url: articleUrl,
+        level: cefrLevel,
+        language: targetLanguage,
+      });
       response.json(data);
       return;
     }
@@ -502,19 +543,36 @@ export const simplifyArticle = onRequest(async (request, response) => {
     });
 
     // 3) Prepare the simplification prompt
-    const systemPrompt = `Simplify this news article for CEFR ${cefrLevel} level learners. ` +
-      `Preserve all <img> tags exactly.
+    // Determine the language instruction - be VERY explicit to prevent translation
+    const languageInstruction = targetLanguage ?
+      `CRITICAL LANGUAGE REQUIREMENT: The output MUST be written entirely in ${targetLanguage}. ` +
+      "DO NOT translate to English under any circumstances. " +
+      `Keep ALL text, including simplified vocabulary, in ${targetLanguage}.` :
+      "CRITICAL LANGUAGE REQUIREMENT: Keep the article in its ORIGINAL language. " +
+      "DO NOT translate to English. If the original is in Spanish, output Spanish. " +
+      "If the original is in French, output French. Preserve the original language throughout.";
 
-    ${cefrLevel} guidelines:
-    ${cefrLevel === "A2" ? "- Simple present/past tense, 10-15 word sentences, basic vocabulary" : ""}
-    ${cefrLevel === "B1" ? "- Mix simple/compound sentences, common vocabulary, clear structure" : ""}
-    ${cefrLevel === "B2" ? "- Varied sentences, sophisticated vocabulary, detailed explanations" : ""}
-    ${cefrLevel === "C1" ? "- Complex structures, advanced vocabulary, nuanced explanations" : ""}
+    const systemPrompt = `You are a language learning assistant that simplifies news articles for language learners.
 
-    Return only simplified HTML, no explanations.`;
+${languageInstruction}
 
-    const userPrompt = `Please simplify this article for ${cefrLevel} level learners. ` +
-      `Preserve all <img> tags exactly:\n\n    ${originalArticle.llmHtml}`;
+IMPORTANT RULES:
+1. Output language: ${targetLanguage || "SAME AS INPUT"} - NEVER translate to English unless the original is in English
+2. Preserve all <img> tags exactly as they appear
+3. Simplify vocabulary and sentence structure for CEFR ${cefrLevel} level
+4. Keep the same meaning and all key information
+
+${cefrLevel} guidelines:
+${cefrLevel === "A2" ? "- Use simple present/past tense, 10-15 word sentences, basic vocabulary" : ""}
+${cefrLevel === "B1" ? "- Use mix of simple/compound sentences, common vocabulary, clear structure" : ""}
+${cefrLevel === "B2" ? "- Use varied sentences, sophisticated vocabulary, detailed explanations" : ""}
+${cefrLevel === "C1" ? "- Use complex structures, advanced vocabulary, nuanced explanations" : ""}
+
+Return ONLY the simplified HTML content in ${targetLanguage || "the original language"}, no explanations.`;
+
+    const userPrompt = `Simplify this article for ${cefrLevel} level learners. ` +
+      `OUTPUT LANGUAGE: ${targetLanguage || "Keep in original language (DO NOT translate to English)"}\n\n` +
+      `Article content:\n${originalArticle.llmHtml}`;
 
     // 4) Call OpenAI API with conditional streaming
     logger.info("Calling OpenAI API", {
@@ -537,7 +595,7 @@ export const simplifyArticle = onRequest(async (request, response) => {
       let fullContent = "";
       let tokenCount = 0;
 
-      const stream = await openai.chat.completions.create({
+      const stream = await getOpenAI().chat.completions.create({
         model: "gpt-5-nano",
         messages: [
           {role: "system", content: systemPrompt},
@@ -573,6 +631,7 @@ export const simplifyArticle = onRequest(async (request, response) => {
       const simplifiedPayload = {
         originalUrl: articleUrl,
         cefrLevel,
+        language: targetLanguage || "",
         title: originalArticle.title,
         byline: originalArticle.byline,
         siteName: originalArticle.siteName,
@@ -585,11 +644,15 @@ export const simplifyArticle = onRequest(async (request, response) => {
 
       // Cache asynchronously - don't block the response
       db.collection("simplifiedArticles").add(simplifiedPayload)
-        .then(() => logger.info("Streamed result cached successfully", {url: articleUrl, level: cefrLevel}))
+        .then(() => logger.info("Streamed result cached successfully", {
+          url: articleUrl,
+          level: cefrLevel,
+          language: targetLanguage,
+        }))
         .catch((error) => logger.error("Failed to cache streamed result", {error, url: articleUrl}));
     } else {
       // Existing non-streaming logic
-      const completion = await openai.chat.completions.create({
+      const completion = await getOpenAI().chat.completions.create({
         model: "gpt-5-nano",
         messages: [
           {role: "system", content: systemPrompt},
@@ -619,6 +682,7 @@ export const simplifyArticle = onRequest(async (request, response) => {
       const simplifiedPayload = {
         originalUrl: articleUrl,
         cefrLevel,
+        language: targetLanguage || "",
         title: originalArticle.title,
         byline: originalArticle.byline,
         siteName: originalArticle.siteName,
