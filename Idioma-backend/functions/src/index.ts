@@ -112,7 +112,6 @@ export const getNews = onRequest(async (request, response) => {
     country: request.query.country,
     language: request.query.language,
   });
-  logger.info("Loaded NEWS_API_KEY:", newsAPIKey ? "[SET]" : "[NOT SET]");
 
   try {
     // Get country and language from query parameters
@@ -189,7 +188,7 @@ export const getNews = onRequest(async (request, response) => {
 
 // Function to extract and simplify article content from a URL
 // Uses jsdom + @mozilla/readability to parse main content and collect images
-export const extractArticle = onRequest(async (request, response) => {
+export const extractArticle = onRequest({timeoutSeconds: 300}, async (request, response) => {
   const url = (request.query.url as string) || (request.body && (request.body.url as string));
   logger.info("extractArticle called", {url});
 
@@ -261,16 +260,7 @@ export const extractArticle = onRequest(async (request, response) => {
       throw new Error("Fetch failed after all retries");
     };
 
-    const {data: html, status, headers} = await fetchWithRetry();
-
-    logger.info("HTML fetch successful", {
-      url,
-      status,
-      contentType: headers["content-type"],
-      htmlLength: html.length,
-      hasBody: html.includes("<body"),
-      hasScript: html.includes("<script"),
-    });
+    const {data: html} = await fetchWithRetry();
 
     // Check if we got a redirect or error page
     if (html.includes("Access Denied") || html.includes("403 Forbidden") || html.includes("Cloudflare")) {
@@ -286,15 +276,6 @@ export const extractArticle = onRequest(async (request, response) => {
     logger.info("Parsing HTML with Readability", {url});
     const dom = new JSDOM(html, {url});
     const doc = dom.window.document;
-
-    // Log some basic info about the parsed document
-    logger.info("Document parsed", {
-      url,
-      title: doc.title,
-      bodyLength: doc.body?.innerHTML?.length || 0,
-      paragraphs: doc.querySelectorAll("p").length,
-      images: doc.querySelectorAll("img").length,
-    });
 
     const reader = new Readability(doc);
     const article = reader.parse();
@@ -313,12 +294,7 @@ export const extractArticle = onRequest(async (request, response) => {
       return;
     }
 
-    logger.info("Article parsed successfully", {
-      url,
-      title: article.title,
-      contentLength: article.textContent?.length || 0,
-      excerpt: article.excerpt,
-    });
+    logger.info("Article parsed successfully", {url, title: article.title});
 
     // 4) Normalize images and preserve positions in cleaned HTML
     const toAbsolute = (src: string): string => {
@@ -452,7 +428,7 @@ export const extractArticle = onRequest(async (request, response) => {
 });
 
 // Function to simplify article content using OpenAI for different CEFR levels
-export const simplifyArticle = onRequest(async (request, response) => {
+export const simplifyArticle = onRequest({timeoutSeconds: 300}, async (request, response) => {
   const {url, level = "B1", stream = "false", language = ""} = request.query as {
     url?: string;
     level?: string;
@@ -601,7 +577,7 @@ Return ONLY the simplified HTML content in ${targetLanguage || "the original lan
           {role: "system", content: systemPrompt},
           {role: "user", content: userPrompt},
         ],
-        max_completion_tokens: 3000,
+        max_completion_tokens: 16000,
         stream: true,
       });
 
@@ -658,15 +634,35 @@ Return ONLY the simplified HTML content in ${targetLanguage || "the original lan
           {role: "system", content: systemPrompt},
           {role: "user", content: userPrompt},
         ],
-        max_completion_tokens: 3000,
+        max_completion_tokens: 16000,
         stream: false,
+      });
+
+      // Log completion response
+      logger.info("OpenAI completion response", {
+        url: articleUrl,
+        level: cefrLevel,
+        finishReason: completion.choices[0]?.finish_reason,
+        contentLength: completion.choices[0]?.message?.content?.length || 0,
+        tokens: {
+          input: completion.usage?.prompt_tokens || 0,
+          output: completion.usage?.completion_tokens || 0,
+          total: completion.usage?.total_tokens || 0,
+        },
       });
 
       const simplifiedHtml = completion.choices[0]?.message?.content;
 
       if (!simplifiedHtml) {
-        logger.error("OpenAI returned empty response", {url: articleUrl, level: cefrLevel});
-        response.status(500).json({error: "Failed to generate simplified content"});
+        logger.error("OpenAI returned empty response", {
+          url: articleUrl,
+          level: cefrLevel,
+          finishReason: completion.choices[0]?.finish_reason,
+        });
+        response.status(500).json({
+          error: "Failed to generate simplified content",
+          details: `OpenAI finish_reason: ${completion.choices[0]?.finish_reason || "unknown"}`,
+        });
         return;
       }
 
@@ -675,7 +671,11 @@ Return ONLY the simplified HTML content in ${targetLanguage || "the original lan
         level: cefrLevel,
         originalLength: originalArticle.llmHtml?.length || 0,
         simplifiedLength: simplifiedHtml.length,
-        tokensUsed: completion.usage?.total_tokens || 0,
+        tokens: {
+          input: completion.usage?.prompt_tokens || 0,
+          output: completion.usage?.completion_tokens || 0,
+          total: completion.usage?.total_tokens || 0,
+        },
       });
 
       // 5) Build response payload and cache
