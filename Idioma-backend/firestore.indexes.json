@@ -1,12 +1,48 @@
 {
   "indexes": [
     {
+      "collectionGroup": "articles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "country", "order": "ASCENDING" },
+        { "fieldPath": "language", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "articles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "country", "order": "ASCENDING" },
+        { "fieldPath": "language", "order": "ASCENDING" },
+        { "fieldPath": "categoriesKey", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "articleContent",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "url", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "simplifiedArticles",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "originalUrl", "order": "ASCENDING" },
         { "fieldPath": "cefrLevel", "order": "ASCENDING" },
         { "fieldPath": "language", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "simplifiedArticles",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "cefrLevel", "order": "ASCENDING" },
+        { "fieldPath": "originalUrl", "order": "ASCENDING" },
         { "fieldPath": "timestamp", "order": "DESCENDING" }
       ]
     }

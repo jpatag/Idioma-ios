@@ -35,6 +35,17 @@ struct Article: Codable, Identifiable {
     let language: String?
     let country: [String]?
     let category: [String]?
+    let idiomaCategoryIds: [Int]?
+    
+    // Computed property for primary Idioma category display name
+    var primaryCategoryName: String? {
+        if let ids = idiomaCategoryIds, let first = ids.first,
+           let cat = IdiomaCategory.category(for: first) {
+            return cat.name
+        }
+        // Fallback to raw NewsData category if no Idioma id
+        return category?.first?.capitalized
+    }
     
     // Computed property for display-friendly date
     var formattedDate: String {
@@ -150,7 +161,7 @@ enum CEFRLevel: String, CaseIterable {
         switch self {
         case .a2: return "Beginner"
         case .b1: return "Intermediate"
-        case .b2: return "Upper Intermediate"
+        case .b2: return "Advanced"
         case .c1: return "Advanced"
         }
     }
@@ -162,6 +173,17 @@ enum CEFRLevel: String, CaseIterable {
         case .b1: return "Intermedio"
         case .b2: return "Avanzado"
         case .c1: return "Experto"
+        }
+    }
+
+    var vocabularyLevelID: VocabularyLevelID {
+        switch self {
+        case .a2:
+            return .l1
+        case .b1:
+            return .l2
+        case .b2, .c1:
+            return .l3
         }
     }
 }

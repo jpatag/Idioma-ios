@@ -26,17 +26,25 @@ class APIService {
     /// - Parameters:
     ///   - country: Country code (e.g., "es" for Spain)
     ///   - language: Language code (e.g., "es" for Spanish)
+    ///   - categories: Array of Idioma category ids (1–14)
     /// - Returns: Array of Article objects
-    func getNews(country: String, language: String) async throws -> [Article] {
-        print("\n🔵 [API] getNews called")
-        print("📍 Parameters: country=\(country), language=\(language)")
+    func getNews(country: String, language: String, categories: [Int] = []) async throws -> [Article] {
+        print("\n🗕 [API] getNews called")
+        print("📍 Parameters: country=\(country), language=\(language), categories=\(categories)")
         
         // Build the URL with query parameters
         var components = URLComponents(string: "\(baseURL)/getNews")!
-        components.queryItems = [
+        var queryItems = [
             URLQueryItem(name: "country", value: country),
             URLQueryItem(name: "language", value: language)
         ]
+        
+        if !categories.isEmpty {
+            let categoriesStr = categories.map { String($0) }.joined(separator: ",")
+            queryItems.append(URLQueryItem(name: "categories", value: categoriesStr))
+        }
+        
+        components.queryItems = queryItems
         
         guard let url = components.url else {
             print("❌ [API] Invalid URL")

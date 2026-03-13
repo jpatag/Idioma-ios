@@ -142,6 +142,22 @@ struct ArticleDetailView: View {
             return simplifiedContent?.title ?? articleContent?.title ?? article.title ?? "Untitled"
         }
     }
+
+    private var activeHighlightCategoryIDs: Set<Int> {
+        SpanishVocabularyHighlighter.shared.activeCategoryIDs(from: article.idiomaCategoryIds)
+    }
+
+    private var highlightLanguageCode: String? {
+        article.languageCode ?? authService.targetLanguage
+    }
+
+    private var highlightVocabularyLevelIDs: Set<VocabularyLevelID> {
+        if let currentLevel {
+            return [currentLevel.vocabularyLevelID]
+        }
+
+        return Set(VocabularyLevelID.allCases)
+    }
     
     // MARK: - Level Selector Section
     private var levelSelectorSection: some View {
@@ -191,13 +207,17 @@ struct ArticleDetailView: View {
         } else if showingOriginal {
             ArticleTextContent(
                 htmlContent: articleContent?.textContent ?? article.content ?? article.description ?? "No content available.",
-                primaryColor: primaryColor
+                activeCategoryIDs: activeHighlightCategoryIDs,
+                languageCode: highlightLanguageCode,
+                vocabularyLevelIDs: highlightVocabularyLevelIDs
             )
             .padding(.horizontal, 16)
         } else {
             ArticleTextContent(
                 htmlContent: simplifiedContent?.simplifiedHtml ?? articleContent?.textContent ?? "No content available.",
-                primaryColor: primaryColor
+                activeCategoryIDs: activeHighlightCategoryIDs,
+                languageCode: highlightLanguageCode,
+                vocabularyLevelIDs: highlightVocabularyLevelIDs
             )
             .padding(.horizontal, 16)
         }
@@ -346,40 +366,85 @@ struct LevelSelectorOptional: View {
 // MARK: - Article Text Content
 struct ArticleTextContent: View {
     let htmlContent: String
-    let primaryColor: Color
-    
-    // Convert HTML to plain text (simple implementation)
-    var plainText: String {
-        // Remove HTML tags for simple display
-        // In production, use a proper HTML parser or WKWebView
-        var text = htmlContent
-        
-        // Remove common HTML tags
-        let patterns = [
-            "<[^>]+>",  // HTML tags
-            "&nbsp;",   // Non-breaking space
-            "&amp;",    // Ampersand
-            "&lt;",     // Less than
-            "&gt;",     // Greater than
-            "&quot;",   // Quote
-        ]
-        
-        for pattern in patterns {
-            text = text.replacingOccurrences(
-                of: pattern,
-                with: pattern == "&nbsp;" ? " " : pattern == "&amp;" ? "&" : "",
-                options: .regularExpression
-            )
-        }
-        
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    let activeCategoryIDs: Set<Int>
+    let languageCode: String?
+    let vocabularyLevelIDs: Set<VocabularyLevelID>
+
+    @State private var renderedText = AttributedString()
+
+    private var plainText: String {
+        SpanishVocabularyHighlighter.plainText(from: htmlContent)
     }
-    
+
+    private var renderKey: String {
+        let categoryKey = activeCategoryIDs.sorted().map(String.init).joined(separator: ",")
+        let levelKey = vocabularyLevelIDs.map(\.rawValue).sorted().joined(separator: ",")
+        return "\(languageCode ?? "")|\(levelKey)|\(categoryKey)|\(htmlContent.hashValue)"
+    }
+
+    private var fallbackText: AttributedString {
+        AttributedString(plainText)
+    }
+
+    private func rebuildAttributedText() async {
+        renderedText = fallbackText
+
+        guard !plainText.isEmpty else {
+            renderedText = AttributedString()
+            return
+        }
+
+        guard SpanishVocabularyHighlighter.shared.shouldHighlight(languageCode: languageCode),
+              !vocabularyLevelIDs.isEmpty,
+              !activeCategoryIDs.isEmpty else {
+            return
+        }
+
+        let text = plainText
+        let matches = await Task.detached(priority: .userInitiated) {
+            SpanishVocabularyHighlighter.shared.highlightMatches(
+                in: text,
+                activeCategoryIDs: activeCategoryIDs,
+                vocabularyLevelIDs: vocabularyLevelIDs
+            )
+        }.value
+
+        guard !Task.isCancelled, !matches.isEmpty else {
+            return
+        }
+
+        let batchCount = min(6, max(1, matches.count))
+        let batchSize = max(1, Int(ceil(Double(matches.count) / Double(batchCount))))
+
+        for endIndex in stride(from: batchSize, through: matches.count, by: batchSize) {
+            try? Task.checkCancellation()
+
+            let partialMatches = Array(matches.prefix(endIndex))
+            let partialText = await Task.detached(priority: .userInitiated) {
+                SpanishVocabularyHighlighter.shared.makeAttributedString(
+                    text: text,
+                    matches: partialMatches
+                )
+            }.value
+
+            withAnimation(.easeOut(duration: 0.18)) {
+                renderedText = partialText
+            }
+
+            if endIndex < matches.count {
+                try? await Task.sleep(nanoseconds: 45_000_000)
+            }
+        }
+    }
+
     var body: some View {
-        Text(plainText)
+        Text(renderedText.characters.isEmpty ? fallbackText : renderedText)
             .font(.system(.body, design: .serif))
             .lineSpacing(8)
             .foregroundColor(.primary)
+            .task(id: renderKey) {
+                await rebuildAttributedText()
+            }
     }
 }
 
@@ -400,9 +465,11 @@ struct ArticleTextContent: View {
             source_icon: nil,
             language: "es",
             country: ["es"],
-            category: ["technology"]
+            category: ["technology"],
+            idiomaCategoryIds: []
         ),
         selectedLevel: .b1
     )
     .environmentObject(AuthService())
 }
+

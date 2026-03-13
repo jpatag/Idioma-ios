@@ -25,7 +25,7 @@ struct MainTabView: View {
     }
     
     var body: some View {
-        ZStack(alignment: .bottom) {
+        VStack(spacing: 0) {
             // Tab content
             Group {
                 switch selectedTab {
@@ -37,6 +37,7 @@ struct MainTabView: View {
                     SettingsView()
                 }
             }
+            .frame(maxHeight: .infinity)
             
             // Custom Tab Bar
             CustomTabBar(
@@ -92,14 +93,15 @@ struct CustomTabBar: View {
             }
         }
         .padding(.horizontal, 40)
-        .padding(.vertical, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
         .background(
-            backgroundColor.opacity(0.9)
-                .background(.ultraThinMaterial)
+            backgroundColor
+                .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: -4)
         )
         .overlay(
             Rectangle()
-                .fill(Color.pink.opacity(0.1))
+                .fill(Color.pink.opacity(0.15))
                 .frame(height: 1),
             alignment: .top
         )

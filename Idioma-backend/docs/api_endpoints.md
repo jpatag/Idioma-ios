@@ -10,39 +10,66 @@
 ## 1. Get Articles
 
 **Endpoint:**  
-`GET /articles`
+`GET /getNews`
 
 **Description:**  
-Fetch a list of region-specific news articles.
+Fetch news articles filtered by country, language, and optionally by Idioma interest categories.  
+When categories are provided, strong-mapping categories are combined into one NewsData query, while lossy categories (Weather & Disaster, Social Issues & Society, History & Religion) are fetched separately with keyword augmentation and then merged into a balanced feed.
 
 **Headers:**  
-`Authorization: Bearer <FIREBASE_ID_TOKEN>`
+`Authorization: Bearer <FIREBASE_ID_TOKEN>` *(currently disabled)*
 
 **Query Parameters:**
-- `region` (string, optional): Filter by region code (e.g., `us`, `jp`)
-- `limit` (int, optional): Number of articles to return (default: 20)
-- `offset` (int, optional): For pagination
+- `country` (string, **required**): Country code (e.g., `es`, `fr`, `de`)
+- `language` (string, **required**): Language code (e.g., `es`, `fr`, `de`)
+- `categories` (string, optional): Comma-separated Idioma category ids (1–14), max 5. Example: `1,4,11`
 
 **Response:**
 ```json
 {
-  "articles": [
+  "results": [
     {
-      "id": "abc123",
+      "article_id": "abc123",
       "title": "News headline",
-      "region": "us",
-      "publishedAt": "2024-06-01T12:00:00Z",
-      "summary": "Short summary...",
-      "complexity": "B1"
+      "link": "https://...",
+      "description": "Short summary...",
+      "pubDate": "2024-06-01 12:00:00",
+      "image_url": "https://...",
+      "source_name": "Example News",
+      "language": "spanish",
+      "country": ["es"],
+      "category": ["politics"],
+      "idiomaCategoryIds": [1]
     }
-    // ...more articles
   ]
 }
 ```
 
+**Category ID reference (1–14):**
+| ID | Category | NewsData Mapping | Lossy? |
+|----|----------|-----------------|--------|
+| 1 | Politics & Government | politics | No |
+| 2 | Economy & Finance | business | No |
+| 3 | Arts & Entertainment | entertainment | No |
+| 4 | Sports | sports | No |
+| 5 | Business & Labor | business | No |
+| 6 | Science & Tech | technology | No |
+| 7 | Education | education | No |
+| 8 | Crime, Law & Justice | crime | No |
+| 9 | History & Religion | other | Yes |
+| 10 | Environment & Nature | environment | No |
+| 11 | Health & Wellness | health | No |
+| 12 | Social Issues & Society | domestic | Yes |
+| 13 | Lifestyle & Travel | lifestyle | No |
+| 14 | Weather & Disaster | breaking | Yes |
+
+**Cache behavior:**  
+Cached 24 hours in Firestore `articles` collection, keyed by `country + language + categoriesKey`.  
+Requests with different category sets get separate cache entries.
+
 **Errors:**
-- `401 Unauthorized` — Missing or invalid token
-- `500 Internal Server Error`
+- `400`: Missing country/language, invalid category ids, or more than 5 categories
+- `500`: API key not configured or fetch failed
 
 ---
 

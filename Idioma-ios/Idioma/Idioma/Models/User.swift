@@ -19,6 +19,9 @@ struct User: Codable {
     var targetLanguage: String      // e.g., "es" for Spanish
     var preferredLevel: String      // CEFR level: A2, B1, B2, C1
     
+    // Category preferences
+    var selectedCategories: [Int]   // Idioma category ids (1–14)
+    
     // App preferences
     var notificationsEnabled: Bool
     var darkModeEnabled: Bool
@@ -33,6 +36,7 @@ struct User: Codable {
             nativeLanguage: "en",
             targetLanguage: "es",
             preferredLevel: "B1",
+            selectedCategories: [],
             notificationsEnabled: true,
             darkModeEnabled: false
         )

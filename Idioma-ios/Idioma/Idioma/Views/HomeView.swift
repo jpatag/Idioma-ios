@@ -26,9 +26,9 @@ struct HomeView: View {
     
     // Available languages for quick filter
     let languageFilters = [
-        ("es", "Spanish"),
-        ("fr", "French"),
-        ("de", "German"),
+        ("es", "🇪🇸 Spanish"),
+        ("fr", "🇫🇷 French"),
+        ("de", "🇩🇪 German"),
     ]
     
     var body: some View {
@@ -65,37 +65,22 @@ struct HomeView: View {
                     .padding(.vertical, 8)
                     
                     // MARK: - Language Filter Pills
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(languageFilters, id: \.0) { code, name in
-                                LanguageFilterPill(
-                                    name: name,
-                                    isSelected: selectedLanguage == code,
-                                    primaryColor: primaryColor
-                                ) {
-                                    selectedLanguage = code
-                                    loadArticles()
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                    }
-                    
-                    // MARK: - Difficulty Filter
                     HStack(spacing: 8) {
-                        ForEach([CEFRLevel.a2, .b1, .b2], id: \.self) { level in
-                            DifficultyPill(
-                                level: level,
-                                isSelected: selectedLevel == level,
+                        Spacer()
+                        ForEach(languageFilters, id: \.0) { code, name in
+                            LanguageFilterPill(
+                                name: name,
+                                isSelected: selectedLanguage == code,
                                 primaryColor: primaryColor
                             ) {
-                                selectedLevel = level
+                                selectedLanguage = code
+                                loadArticles()
                             }
                         }
+                        Spacer()
                     }
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
+                    .padding(.vertical, 8)
                     
                     // MARK: - Articles List
                     if isLoading {
@@ -137,14 +122,14 @@ struct HomeView: View {
                             LazyVStack(spacing: 16) {
                                 ForEach(articles) { article in
                                     NavigationLink(destination: ArticleDetailView(article: article, selectedLevel: selectedLevel)) {
-                                        ArticleCard(article: article, level: selectedLevel, primaryColor: primaryColor)
+                                        ArticleCard(article: article, primaryColor: primaryColor)
                                     }
                                     .buttonStyle(PlainButtonStyle())
                                 }
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .padding(.bottom, 100) // Space for tab bar
+                            .padding(.bottom, 16)
                         }
                     }
                 }
@@ -178,7 +163,8 @@ struct HomeView: View {
                 
                 let fetchedArticles = try await APIService.shared.getNews(
                     country: country,
-                    language: selectedLanguage
+                    language: selectedLanguage,
+                    categories: authService.selectedCategories
                 )
                 
                 print("✅ [HomeView] Received \(fetchedArticles.count) articles")
@@ -211,19 +197,16 @@ struct LanguageFilterPill: View {
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) {
-                Text(name)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                
-                Image(systemName: "chevron.down")
-                    .font(.caption)
-            }
-            .foregroundColor(.primary)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(isSelected ? primaryColor.opacity(0.2) : Color.pink.opacity(0.1))
-            .cornerRadius(8)
+            Text(name)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundColor(.primary)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(isSelected ? primaryColor.opacity(0.2) : Color.pink.opacity(0.1))
+                .cornerRadius(8)
         }
     }
 }
@@ -252,7 +235,6 @@ struct DifficultyPill: View {
 // MARK: - Article Card
 struct ArticleCard: View {
     let article: Article
-    let level: CEFRLevel
     let primaryColor: Color
     
     var body: some View {
@@ -312,15 +294,17 @@ struct ArticleCard: View {
                 
                 // Bottom row
                 HStack {
-                    // Difficulty badge
-                    Text(level.displayName)
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 4)
-                        .background(Color.pink.opacity(0.1))
-                        .cornerRadius(12)
+                    // Category badge
+                    if let categoryName = article.primaryCategoryName {
+                        Text(categoryName)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
+                            .background(Color.pink.opacity(0.1))
+                            .cornerRadius(12)
+                    }
                     
                     Spacer()
                     

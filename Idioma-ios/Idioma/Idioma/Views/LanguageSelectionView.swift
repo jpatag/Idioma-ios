@@ -15,6 +15,7 @@ struct LanguageSelectionView: View {
     @State private var searchText: String = ""
     @State private var selectedRegion: String = "Popular"
     @State private var selectedLanguage: Language?
+    @State private var navigateToCategories: Bool = false
     
     // Theme colors
     let primaryColor = Color(red: 244/255, green: 114/255, blue: 182/255) // #F472B6
@@ -35,6 +36,7 @@ struct LanguageSelectionView: View {
     }
     
     var body: some View {
+        NavigationStack {
         ZStack {
             // Background
             backgroundColor
@@ -124,8 +126,8 @@ struct LanguageSelectionView: View {
                 Spacer()
                 
                 Button(action: {
-                    if let language = selectedLanguage {
-                        authService.completeOnboarding(targetLanguage: language.id)
+                    if selectedLanguage != nil {
+                        navigateToCategories = true
                     }
                 }) {
                     Text("Continue")
@@ -153,6 +155,14 @@ struct LanguageSelectionView: View {
                 )
             }
         }
+        .navigationDestination(isPresented: $navigateToCategories) {
+            if let language = selectedLanguage {
+                CategorySelectionView(targetLanguage: language.id)
+                    .environmentObject(authService)
+                    .navigationBarBackButtonHidden(true)
+            }
+        }
+        } // NavigationStack
     }
 }
 

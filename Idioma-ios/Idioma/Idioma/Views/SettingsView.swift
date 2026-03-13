@@ -20,11 +20,19 @@ struct SettingsView: View {
     @State private var showNativeLanguagePicker: Bool = false
     @State private var showTargetLanguagePicker: Bool = false
     @State private var showLevelPicker: Bool = false
+    @State private var showCategoryPicker: Bool = false
     
     // Theme colors
     let primaryColor = Color(red: 236/255, green: 72/255, blue: 153/255)
     let backgroundColor = Color(red: 255/255, green: 247/255, blue: 250/255)
     let iconBackgroundColor = Color(red: 252/255, green: 231/255, blue: 243/255)
+    
+    private var categorySubtitle: String {
+        let ids = authService.selectedCategories
+        if ids.isEmpty { return "None selected" }
+        let names = ids.compactMap { IdiomaCategory.category(for: $0)?.name }
+        return names.joined(separator: ", ")
+    }
     
     var body: some View {
         ZStack {
@@ -125,6 +133,19 @@ struct SettingsView: View {
                         ) {
                             showLevelPicker = true
                         }
+                        
+                        Divider()
+                            .padding(.leading, 72)
+                        
+                        // Interest Categories
+                        SettingsRow(
+                            icon: "square.grid.2x2",
+                            title: "Interest Categories",
+                            subtitle: categorySubtitle,
+                            iconBackgroundColor: iconBackgroundColor
+                        ) {
+                            showCategoryPicker = true
+                        }
                     }
                     
                     // MARK: - Account & App Section
@@ -223,6 +244,14 @@ struct SettingsView: View {
                 primaryColor: primaryColor
             ) { level in
                 authService.updatePreferences(level: level.rawValue)
+            }
+        }
+        .sheet(isPresented: $showCategoryPicker) {
+            CategoryPickerSheet(
+                selectedCategories: authService.selectedCategories,
+                primaryColor: primaryColor
+            ) { categories in
+                authService.updatePreferences(categories: categories)
             }
         }
         .onAppear {
@@ -434,6 +463,58 @@ struct LevelPickerSheet: View {
                     }
                 }
             }
+        }
+    }
+}
+
+// MARK: - Category Picker Sheet
+struct CategoryPickerSheet: View {
+    @Environment(\.dismiss) var dismiss
+
+    let selectedCategories: [Int]
+    let primaryColor: Color
+    let onSelect: ([Int]) -> Void
+
+    @State private var selectedIds: Set<Int> = []
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    ForEach(IdiomaCategory.all) { category in
+                        CategoryCell(
+                            category: category,
+                            isSelected: selectedIds.contains(category.id),
+                            isDisabled: !selectedIds.contains(category.id) && selectedIds.count >= IdiomaCategory.maxSelection,
+                            primaryColor: primaryColor
+                        ) {
+                            if selectedIds.contains(category.id) {
+                                selectedIds.remove(category.id)
+                            } else if selectedIds.count < IdiomaCategory.maxSelection {
+                                selectedIds.insert(category.id)
+                            }
+                        }
+                    }
+                }
+                .padding(16)
+            }
+            .navigationTitle("Interest Categories")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save") {
+                        onSelect(selectedIds.sorted())
+                        dismiss()
+                    }
+                    .disabled(selectedIds.isEmpty)
+                }
+            }
+        }
+        .onAppear {
+            selectedIds = Set(selectedCategories)
         }
     }
 }

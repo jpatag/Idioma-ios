@@ -100,6 +100,40 @@ exports.hello = onRequest((req, res) => {
 });
 
 
+// ---------------------------------------------------------------------------
+// Category mapping from Idioma app taxonomy to NewsData provider categories
+// ---------------------------------------------------------------------------
+interface CategoryMapping {
+  newsDataCategory: string;
+  isLossy: boolean;
+  keywords?: string; // Boolean query for keyword-augmented (lossy) categories
+}
+
+const CATEGORY_MAP: Record<number, CategoryMapping> = {
+  1: {newsDataCategory: "politics", isLossy: false},
+  2: {newsDataCategory: "business", isLossy: false},
+  3: {newsDataCategory: "entertainment", isLossy: false},
+  4: {newsDataCategory: "sports", isLossy: false},
+  5: {newsDataCategory: "business", isLossy: false},
+  6: {newsDataCategory: "technology", isLossy: false},
+  7: {newsDataCategory: "education", isLossy: false},
+  8: {newsDataCategory: "crime", isLossy: false},
+  9: {newsDataCategory: "other", isLossy: true,
+    keywords: "religion OR church OR mosque OR temple OR faith OR archaeology OR historical OR history OR heritage"},
+  10: {newsDataCategory: "environment", isLossy: false},
+  11: {newsDataCategory: "health", isLossy: false},
+  12: {newsDataCategory: "domestic", isLossy: true,
+    keywords: "housing OR poverty OR inequality OR protest OR " +
+      "migration OR homelessness OR welfare OR discrimination"},
+  13: {newsDataCategory: "lifestyle", isLossy: false},
+  14: {newsDataCategory: "breaking", isLossy: true,
+    keywords: "weather OR storm OR hurricane OR flood OR wildfire OR earthquake OR heatwave OR forecast OR disaster"},
+};
+
+const VALID_CATEGORY_IDS = Object.keys(CATEGORY_MAP).map(Number);
+const MAX_CATEGORIES = 5;
+
+
 export const getNews = onRequest(async (request, response) => {
   // --- Require Firebase Auth ---
   // const decodedToken = await verifyFirebaseIdToken(request);
@@ -111,12 +145,14 @@ export const getNews = onRequest(async (request, response) => {
   logger.info("Fetching news with parameters:", {
     country: request.query.country,
     language: request.query.language,
+    categories: request.query.categories,
   });
 
   try {
     // Get country and language from query parameters
     const country = request.query.country as string;
     const language = request.query.language as string;
+    const categoriesParam = request.query.categories as string | undefined;
 
     if (!country || !language) {
       response.status(400).json({
@@ -132,51 +168,162 @@ export const getNews = onRequest(async (request, response) => {
       return;
     }
 
+    // Parse and validate categories
+    let categoryIds: number[] = [];
+    if (categoriesParam) {
+      categoryIds = categoriesParam.split(",").map((s) => parseInt(s.trim(), 10));
+      const invalid = categoryIds.filter((id) => !VALID_CATEGORY_IDS.includes(id));
+      if (invalid.length > 0) {
+        response.status(400).json({
+          error: `Invalid category ids: ${invalid.join(", ")}. Valid range: 1-14`,
+        });
+        return;
+      }
+      if (categoryIds.length > MAX_CATEGORIES) {
+        response.status(400).json({
+          error: `Maximum ${MAX_CATEGORIES} categories allowed`,
+        });
+        return;
+      }
+    }
+
+    // Build a deterministic cache key that includes categories
+    const categoriesKey = categoryIds.length > 0 ? categoryIds.sort((a, b) => a - b).join(",") : "all";
+
     // Check Firestore for cached articles (within last 24 hours)
     const twentyFourHoursAgo = Timestamp.fromDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
-    const cachedQuery = db.collection("articles")
-      .where("country", "==", country)
-      .where("language", "==", language)
-      .where("timestamp", ">", twentyFourHoursAgo)
-      .orderBy("timestamp", "desc")
-      .limit(1);
+
+    // Use different query depending on whether categories are specified
+    // This keeps backward compatibility with old documents that lack categoriesKey
+    let cachedQuery;
+    if (categoryIds.length > 0) {
+      cachedQuery = db.collection("articles")
+        .where("country", "==", country)
+        .where("language", "==", language)
+        .where("categoriesKey", "==", categoriesKey)
+        .where("timestamp", ">", twentyFourHoursAgo)
+        .orderBy("timestamp", "desc")
+        .limit(1);
+    } else {
+      cachedQuery = db.collection("articles")
+        .where("country", "==", country)
+        .where("language", "==", language)
+        .where("timestamp", ">", twentyFourHoursAgo)
+        .orderBy("timestamp", "desc")
+        .limit(1);
+    }
     const cachedSnapshot = await cachedQuery.get();
 
     if (!cachedSnapshot.empty) {
       const cachedDoc = cachedSnapshot.docs[0];
-      logger.info(`Returning cached news for country: ${country}, language: ${language}`);
+      logger.info("Returning cached news", {country, language, categoriesKey});
       response.json({results: cachedDoc.data().articles});
       return;
     }
 
-    // No cache found: Fetch from NewsAPI
-    const apiResponse = await axios.get("https://newsdata.io/api/1/news", {
-      params: {
-        apikey: newsAPIKey,
-        // ...existing code...
-        country: country,
-        language: language,
-      },
-    });
+    // -----------------------------------------------------------------
+    // Hybrid fetch: separate strong-mapping and lossy categories
+    // -----------------------------------------------------------------
+    let allArticles: any[] = [];
+
+    if (categoryIds.length === 0) {
+      // No categories selected → fetch general news (backwards compatible)
+      const apiResponse = await axios.get("https://newsdata.io/api/1/news", {
+        params: {apikey: newsAPIKey, country, language},
+      });
+      allArticles = (apiResponse.data.results || []).map((a: any) => ({...a, idiomaCategoryIds: []}));
+    } else {
+      // Split into strong-mapping vs lossy categories
+      const strongIds = categoryIds.filter((id) => !CATEGORY_MAP[id].isLossy);
+      const lossyIds = categoryIds.filter((id) => CATEGORY_MAP[id].isLossy);
+
+      // 1. Fetch strong-mapping categories in a single combined query
+      if (strongIds.length > 0) {
+        const newsDataCats = [...new Set(strongIds.map((id) => CATEGORY_MAP[id].newsDataCategory))];
+        logger.info("Fetching strong-mapping categories", {strongIds, newsDataCats});
+
+        const apiResponse = await axios.get("https://newsdata.io/api/1/news", {
+          params: {
+            apikey: newsAPIKey,
+            country,
+            language,
+            category: newsDataCats.join(","),
+          },
+        });
+
+        const strongArticles = (apiResponse.data.results || []).map((a: any) => {
+          // Annotate with the matching Idioma category ids
+          const matchedIds = strongIds.filter((id) => {
+            const mapped = CATEGORY_MAP[id].newsDataCategory;
+            return a.category && a.category.includes(mapped);
+          });
+          return {...a, idiomaCategoryIds: matchedIds.length > 0 ? matchedIds : strongIds};
+        });
+        allArticles.push(...strongArticles);
+      }
+
+      // 2. Fetch each lossy category separately with keyword augmentation
+      for (const lossyId of lossyIds) {
+        const mapping = CATEGORY_MAP[lossyId];
+        logger.info("Fetching lossy category with keywords", {
+          lossyId, newsDataCategory: mapping.newsDataCategory, keywords: mapping.keywords,
+        });
+
+        try {
+          const apiResponse = await axios.get("https://newsdata.io/api/1/news", {
+            params: {
+              apikey: newsAPIKey,
+              country,
+              language,
+              category: mapping.newsDataCategory,
+              q: mapping.keywords,
+            },
+          });
+
+          const lossyArticles = (apiResponse.data.results || []).map((a: any) => ({
+            ...a,
+            idiomaCategoryIds: [lossyId],
+          }));
+          allArticles.push(...lossyArticles);
+        } catch (err) {
+          logger.warn("Lossy category fetch failed, skipping", {
+            lossyId, error: err instanceof Error ? err.message : err,
+          });
+        }
+      }
+
+      // 3. Deduplicate by article_id
+      const seen = new Set<string>();
+      allArticles = allArticles.filter((a) => {
+        if (!a.article_id || seen.has(a.article_id)) return false;
+        seen.add(a.article_id);
+        return true;
+      });
+
+      // 4. Round-robin interleave for categorical balance
+      if (lossyIds.length > 0 && strongIds.length > 0) {
+        allArticles = balanceFeed(allArticles, categoryIds);
+      }
+    }
 
     // Store in Firestore
     const docData = {
       country,
       language,
+      categoriesKey,
       timestamp: Timestamp.now(),
-      articles: apiResponse.data.results || [],
-      nextPage: apiResponse.data.nextPage,
+      articles: allArticles,
     };
     const bytes = Buffer.byteLength(JSON.stringify(docData), "utf8");
     logger.info("Firestore document size (articles)", {
       bytes,
       kb: (bytes / 1024).toFixed(2),
-      articlesCount: docData.articles.length,
+      articlesCount: allArticles.length,
     });
     await db.collection("articles").add(docData);
 
-    logger.info(`Fetched and cached new news for country: ${country}, language: ${language}`);
-    response.json(apiResponse.data);
+    logger.info("Fetched and cached new news", {country, language, categoriesKey, count: allArticles.length});
+    response.json({results: allArticles});
   } catch (error) {
     logger.error("Error in getNews:", error);
     response.status(500).json({
@@ -185,6 +332,51 @@ export const getNews = onRequest(async (request, response) => {
     });
   }
 });
+
+/**
+ * Round-robin interleave articles by their idiomaCategoryIds to avoid
+ * one category dominating the feed. Uses the first category id per article
+ * as the bucket key.
+ * @param {any[]} articles - The articles to interleave.
+ * @param {number[]} categoryIds - The selected category ids.
+ * @return {any[]} Balanced article list.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any,require-jsdoc
+function balanceFeed(articles: any[], categoryIds: number[]): any[] {
+  const buckets: Record<number, any[]> = {};
+  for (const id of categoryIds) {
+    buckets[id] = [];
+  }
+  for (const a of articles) {
+    const primary = (a.idiomaCategoryIds && a.idiomaCategoryIds.length > 0) ?
+      a.idiomaCategoryIds[0] :
+      categoryIds[0];
+    if (buckets[primary]) {
+      buckets[primary].push(a);
+    } else {
+      buckets[categoryIds[0]].push(a);
+    }
+  }
+
+  const result: any[] = [];
+  const keys = categoryIds.filter((id) => buckets[id] && buckets[id].length > 0);
+  const indices: Record<number, number> = {};
+  for (const k of keys) indices[k] = 0;
+
+  let remaining = articles.length;
+  while (remaining > 0) {
+    for (const k of keys) {
+      if (indices[k] < buckets[k].length) {
+        result.push(buckets[k][indices[k]]);
+        indices[k]++;
+        remaining--;
+      }
+    }
+    // Break if no progress was made (all buckets exhausted)
+    if (keys.every((k) => indices[k] >= buckets[k].length)) break;
+  }
+  return result;
+}
 
 // Function to extract and simplify article content from a URL
 // Uses jsdom + @mozilla/readability to parse main content and collect images
@@ -224,12 +416,12 @@ export const extractArticle = onRequest({timeoutSeconds: 300}, async (request, r
     logger.info("Fetching article HTML", {url});
 
     const fetchWithRetry = async (retries = 2):
-      Promise<{data: string; status: number; headers: Record<string, string>}> => {
+      Promise<{data: Buffer; status: number; headers: Record<string, string>}> => {
       for (let attempt = 1; attempt <= retries + 1; attempt++) {
         try {
           logger.info(`Fetch attempt ${attempt}`, {url});
           return await axios.get(url, {
-            responseType: "text",
+            responseType: "arraybuffer",
             headers: {
               "User-Agent":
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
@@ -260,10 +452,17 @@ export const extractArticle = onRequest({timeoutSeconds: 300}, async (request, r
       throw new Error("Fetch failed after all retries");
     };
 
-    const {data: html} = await fetchWithRetry();
+    const {data: htmlBuffer, headers: respHeaders} = await fetchWithRetry();
+
+    // 3) Build DOM with proper encoding detection from Content-Type + HTML meta tags
+    logger.info("Parsing HTML with Readability", {url});
+    const contentType = respHeaders["content-type"] || "text/html";
+    const dom = new JSDOM(htmlBuffer, {url, contentType});
+    const doc = dom.window.document;
 
     // Check if we got a redirect or error page
-    if (html.includes("Access Denied") || html.includes("403 Forbidden") || html.includes("Cloudflare")) {
+    const bodyText = doc.body?.textContent || "";
+    if (bodyText.includes("Access Denied") || bodyText.includes("403 Forbidden") || bodyText.includes("Cloudflare")) {
       logger.warn("Possible bot detection", {url});
       response.status(403).json({
         error: "Access denied - site may be blocking automated requests",
@@ -271,11 +470,6 @@ export const extractArticle = onRequest({timeoutSeconds: 300}, async (request, r
       });
       return;
     }
-
-    // 3) Build DOM and extract main content via Readability
-    logger.info("Parsing HTML with Readability", {url});
-    const dom = new JSDOM(html, {url});
-    const doc = dom.window.document;
 
     const reader = new Readability(doc);
     const article = reader.parse();

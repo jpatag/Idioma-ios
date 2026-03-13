@@ -32,8 +32,17 @@ struct IdiomaApp: App {
             if authService.isAuthenticated {
                 // User is logged in - show main app
                 if authService.hasCompletedOnboarding {
-                    MainTabView()
+                    if authService.hasSelectedCategories {
+                        MainTabView()
+                            .environmentObject(authService)
+                    } else {
+                        // Existing user missing categories — one-time gate
+                        CategorySelectionView(
+                            targetLanguage: authService.targetLanguage,
+                            isExistingUserFlow: true
+                        )
                         .environmentObject(authService)
+                    }
                 } else {
                     // First time user - show language selection
                     LanguageSelectionView()

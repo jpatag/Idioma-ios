@@ -13,6 +13,14 @@ import FirebaseCore
 
 // MARK: - Auth Service
 final class AuthService: ObservableObject {
+    
+    // MARK: - Debug Configuration
+    // Toggle this to skip real authentication during development.
+    // Only compiled in DEBUG builds — no effect in release.
+    #if DEBUG
+    static let skipAuth = true
+    #endif
+    
     // Published properties that update the UI
     @Published var isAuthenticated: Bool = false
     @Published var currentUser: User? = nil
@@ -34,6 +42,7 @@ final class AuthService: ObservableObject {
         static let notificationsEnabled = "notificationsEnabled"
         static let darkModeEnabled = "darkModeEnabled"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
+        static let selectedCategories = "selectedCategories"
     }
     
     // Computed preferences properties
@@ -44,7 +53,10 @@ final class AuthService: ObservableObject {
     
     var targetLanguage: String {
         get { defaults.string(forKey: Keys.targetLanguage) ?? "es" }
-        set { defaults.set(newValue, forKey: Keys.targetLanguage) }
+        set {
+            defaults.set(newValue, forKey: Keys.targetLanguage)
+            scheduleSpanishVocabularyPreloadIfNeeded(for: newValue)
+        }
     }
     
     var preferredLevel: String {
@@ -62,7 +74,18 @@ final class AuthService: ObservableObject {
         set { defaults.set(newValue, forKey: Keys.darkModeEnabled) }
     }
     
+    var selectedCategories: [Int] {
+        get { defaults.array(forKey: Keys.selectedCategories) as? [Int] ?? [] }
+        set { defaults.set(newValue, forKey: Keys.selectedCategories) }
+    }
+    
+    var hasSelectedCategories: Bool {
+        !selectedCategories.isEmpty
+    }
+    
     init() {
+        scheduleSpanishVocabularyPreloadIfNeeded(for: targetLanguage)
+
         // Listen for Firebase auth state changes
         authStateListener = Auth.auth().addStateDidChangeListener { [weak self] _, firebaseUser in
             guard let self = self else { return }
@@ -78,6 +101,7 @@ final class AuthService: ObservableObject {
                         nativeLanguage: self.nativeLanguage,
                         targetLanguage: self.targetLanguage,
                         preferredLevel: self.preferredLevel,
+                        selectedCategories: self.selectedCategories,
                         notificationsEnabled: self.notificationsEnabled,
                         darkModeEnabled: self.darkModeEnabled
                     )
@@ -99,9 +123,53 @@ final class AuthService: ObservableObject {
             Auth.auth().removeStateDidChangeListener(listener)
         }
     }
+
+    private func scheduleSpanishVocabularyPreloadIfNeeded(for language: String) {
+        guard SpanishVocabularyHighlighter.shared.shouldHighlight(languageCode: language) else {
+            return
+        }
+
+        DispatchQueue.global(qos: .utility).async {
+            SpanishVocabularyHighlighter.shared.preload()
+        }
+    }
+    
+    // MARK: - Debug Bypass Login
+    #if DEBUG
+    /// Instantly authenticates with a mock user — no network calls.
+    private func bypassLogin() {
+        isLoading = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self = self else { return }
+            self.currentUser = User(
+                id: "debug-user-001",
+                email: "debug@idioma.dev",
+                displayName: "Debug User",
+                profileImageUrl: nil,
+                nativeLanguage: self.nativeLanguage,
+                targetLanguage: self.targetLanguage,
+                preferredLevel: self.preferredLevel,
+                selectedCategories: self.selectedCategories,
+                notificationsEnabled: self.notificationsEnabled,
+                darkModeEnabled: self.darkModeEnabled
+            )
+            self.isAuthenticated = true
+            self.hasCompletedOnboarding = self.defaults.bool(forKey: Keys.hasCompletedOnboarding)
+            self.isLoading = false
+            print("⚡ [AuthService] DEBUG bypass login — authenticated as mock user")
+        }
+    }
+    #endif
     
     // MARK: - Sign In with Google
     func signInWithGoogle() {
+        #if DEBUG
+        if Self.skipAuth {
+            bypassLogin()
+            return
+        }
+        #endif
+        
         isLoading = true
         errorMessage = nil
         
@@ -168,6 +236,13 @@ final class AuthService: ObservableObject {
     
     // MARK: - Sign In with Email
     func signInWithEmail(email: String, password: String) {
+        #if DEBUG
+        if Self.skipAuth {
+            bypassLogin()
+            return
+        }
+        #endif
+        
         isLoading = true
         errorMessage = nil
         
@@ -192,6 +267,13 @@ final class AuthService: ObservableObject {
     
     // MARK: - Sign Up with Email
     func signUpWithEmail(email: String, password: String) {
+        #if DEBUG
+        if Self.skipAuth {
+            bypassLogin()
+            return
+        }
+        #endif
+        
         isLoading = true
         errorMessage = nil
         
@@ -225,16 +307,30 @@ final class AuthService: ObservableObject {
         }
     }
     
-    // MARK: - Complete Onboarding
-    func completeOnboarding(targetLanguage: String) {
+    // MARK: - Save Target Language (first onboarding step)
+    func saveTargetLanguage(_ language: String) {
+        self.targetLanguage = language
+        currentUser?.targetLanguage = language
+    }
+    
+    // MARK: - Complete Onboarding (after both language + categories are selected)
+    func completeOnboarding(targetLanguage: String, categories: [Int]) {
         self.targetLanguage = targetLanguage
+        self.selectedCategories = categories
         defaults.set(true, forKey: Keys.hasCompletedOnboarding)
         hasCompletedOnboarding = true
         currentUser?.targetLanguage = targetLanguage
+        currentUser?.selectedCategories = categories
+    }
+    
+    // MARK: - Complete Category Selection (for existing users missing categories)
+    func completeCategorySelection(categories: [Int]) {
+        self.selectedCategories = categories
+        currentUser?.selectedCategories = categories
     }
     
     // MARK: - Update Preferences
-    func updatePreferences(nativeLanguage: String? = nil, targetLanguage: String? = nil, level: String? = nil) {
+    func updatePreferences(nativeLanguage: String? = nil, targetLanguage: String? = nil, level: String? = nil, categories: [Int]? = nil) {
         if let native = nativeLanguage {
             self.nativeLanguage = native
             currentUser?.nativeLanguage = native
@@ -246,6 +342,10 @@ final class AuthService: ObservableObject {
         if let level = level {
             self.preferredLevel = level
             currentUser?.preferredLevel = level
+        }
+        if let categories = categories {
+            self.selectedCategories = categories
+            currentUser?.selectedCategories = categories
         }
         objectWillChange.send()
     }
