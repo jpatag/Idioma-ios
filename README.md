@@ -16,14 +16,12 @@
 
 ### *Learn Languages Through Real News*
 
-**An AI-powered iOS app that makes authentic news accessible to language learners**
+**An AI-powered iOS app that makes authentic news accessible to language learners by simplifying articles to your CEFR level.**
 
 [![Swift](https://img.shields.io/badge/Swift-5.9-orange.svg)](https://swift.org)
 [![iOS](https://img.shields.io/badge/iOS-15.0+-blue.svg)](https://www.apple.com/ios/)
 [![Firebase](https://img.shields.io/badge/Firebase-Cloud-yellow.svg)](https://firebase.google.com)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
-
-🇺🇸 **English** • 🇪🇸 **Spanish** • 🇫🇷 **French** • 🇯🇵 **Japanese**
 
 </div>
 
@@ -35,52 +33,52 @@ Language learners struggle to find reading material that's both **authentic** an
 
 ## 💡 The Solution
 
-**Idioma** bridges this gap by using AI to simplify real news articles to match your learning level, letting you read about topics you actually care about while building language skills.
+**Idioma** bridges this gap by using AI to simplify real news articles to match your learning level (A2–C1), letting you read about topics you actually care about while building language skills. 
 
 ---
 
-## ✨ What It Does
+## ✨ Features
 
-### 📰 Real News, Your Level
-Browse today's headlines from major news sources in English, Spanish, French, or Japanese. Each article is automatically adapted to your proficiency level (A2-C1 CEFR scale).
+### 📰 Real News, Your Level & Categories
+Browse today's headlines across 10 supported languages and 14 different customizable interest categories. Each article is automatically adapted to your chosen CEFR proficiency level using OpenAI.
 
-### 📚 Compare & Learn
-Toggle between the original article and the simplified version to see how native speakers express the same ideas. Perfect for building vocabulary and understanding sentence structure.
+### 📚 Vocabulary Highlighting (Spanish)
+Spanish learners get automatic color-coded vocabulary highlighting based on the top 1000 most common words, categorized by CEFR level and topic, helping you focus on the words that matter most to your progress.
 
-### 🚀 Instant & Smart
-Articles are simplified in seconds using OpenAI's language models, with intelligent caching to ensure a smooth experience. No waiting, no frustration.
+### 🚀 Instant Streaming & Formatting
+Articles are simplified instantly using SSE (Server-Sent Events) streaming, rendering paragraph-by-paragraph with native Markdown formatting for a frictionless reading experience.
 
 ### 🔐 Secure & Personal
-Sign in with Google to save your preferences and reading history. Your data is protected by Firebase's enterprise-grade security.
+Sign in with Google to save your language preferences, CEFR level, and favorite categories. Supported by Firebase's secure authentication and scalable Firestore database.
 
 ---
 
-## 🛠️ Built With
+## 🛠️ Stack & Architecture
 
 <table>
 <tr>
 <td align="center" width="50%">
 
-### Frontend
-**Native iOS Experience**
+### Frontend (iOS)
+**Native SwiftUI application**
 
 🎨 **SwiftUI** - Modern, declarative UI  
-📱 **Swift 5.9** - iOS 15.0+ support  
-🏗️ **MVVM Architecture** - Clean, maintainable code  
-🔄 **Async/Await** - Smooth asynchronous operations  
-🎯 **Firebase SDK** - Auth & real-time data  
+📱 **Swift 5.9** - iOS 15.0+  
+⚡ **SSE Streaming** - Real-time AI text progression  
+✨ **MarkdownFormatter** - In-house Markdown parsing  
+🎯 **Firebase SDK** - Auth & real-time DB  
 
 </td>
 <td align="center" width="50%">
 
-### Backend
-**Serverless & Scalable**
+### Backend (Firebase)
+**Serverless Cloud Functions**
 
-☁️ **Firebase Cloud Functions** - Serverless architecture  
-💻 **TypeScript** - Type-safe Node.js runtime  
-🗄️ **Cloud Firestore** - NoSQL database with caching  
-🤖 **OpenAI API** - GPT-powered simplification  
-📡 **NewsAPI** - Real-time news aggregation  
+☁️ **Firebase Cloud Functions** - TypeScript/Node 22  
+🗄️ **Cloud Firestore** - Scalable schema & caching  
+🤖 **OpenAI API** - `gpt-5-nano` for context-aware CEFR  
+📰 **newsdata.io API** - Real-time article aggregation  
+📄 **Mozilla Readability** - Robust HTML extraction  
 
 </td>
 </tr>
@@ -88,104 +86,67 @@ Sign in with Google to save your preferences and reading history. Your data is p
 
 ### Key Technical Highlights
 
-- **🚀 Performance**: Intelligent caching reduces API calls by 80%
-- **🔒 Security**: API keys secured server-side, OAuth2 authentication
-- **📊 Scalability**: Serverless functions auto-scale to demand
-- **🎨 UX**: Native SwiftUI provides 60fps animations
-- **🧪 Testing**: Comprehensive unit tests and Firebase emulator support
+- **⚡ Performance & Caching**: "Fire-and-forget" caching in Firestore ensures users never wait on DB writes. Aggressive caching of raw HTML and simplified Markdown drastically reduces API costs.
+- **🔄 Streaming Engine**: SSE natively supported from Cloud Functions down to the iOS client, buffered and debounced (100ms) to ensure 60fps scrolling while the AI generates text.
+- **🧠 Category Balancing**: Smart query mapping balances `newsdata.io`'s standard categories with our 14 custom user categories using localized keyword augmentation ("lossy" vs "strong" categories).
+- **🛡️ Quality Extraction**: 3-attempt retry pipeline with `jsdom` and header configuration to extract clean text from paywalled or protected sites.
 
 ---
 
-**Key User Flows:**
-1. 🔐 Sign in with Google
-2. 🌍 Select your target language
-3. 📰 Browse today's news headlines
-4. 🤖 Tap to simplify any article
-5. 🔄 Toggle between original and simplified versions
+## 🚀 Quick Start
+
+Want to run this project locally? 
+
+### 📱 iOS App
+1. Clone the repo: `git clone https://github.com/jpatag/Idioma.git`
+2. Open the Xcode project: `open Idioma-ios/Idioma/Idioma.xcodeproj` *(Note: do not open an `Idioma-app` directory)*
+3. Ensure you have the `GoogleService-Info.plist` installed for Firebase Auth to work.
+4. Press ⌘+R in Xcode to build and run.
+
+### ☁️ Backend (Firebase Emulators)
+1. Navigate to the backend directory: `cd Idioma-backend/functions`
+2. Install packages: `npm install`
+3. Setup environment variables by creating `.env`:
+   ```env
+   NEWS_API_KEY=your_key_here
+   OPENAI_API_KEY=your_key_here
+   ```
+4. Build and run emulators:
+   ```bash
+   npm run build
+   npm run serve
+   ```
+*(Starts Functions on `:5001`, Firestore on `:8080`, and Auth on `:9099`)*
 
 ---
 
-## 🎯 Project Status & Roadmap
+## 📅 Project Status & Roadmap
 
-### ✅ What's Working Now
+**Current Phase:** Phase 2 (MVP Frontend Integration)
+- ✅ Google Authentication (3-gate onboarding)
+- ✅ Real-time news aggregation & custom category interleaving
+- ✅ Contextual AI article simplification (Markdown + Streaming)
+- ✅ Spanish Vocabulary Highlighter
 
-- ✨ **Core Functionality**
-  - Google authentication
-  - Multi-language news fetching (4 languages)
-  - AI-powered article simplification
-  - Original/simplified text comparison
-  - Smart caching for performance
-  
-- 🏗️ **Technical Foundation**
-  - SwiftUI iOS app
-  - TypeScript Firebase backend
-  - Serverless cloud functions
-  - Firestore database integration
-  - Local development environment with emulators
-
-
----
-
-## Quick Start
-
-Want to run this project locally? Here's the express version:
-
-```bash
-# Clone the repo
-git clone https://github.com/jpatag/Idioma-ios.git
-cd Idioma-ios
-
-# iOS App
-open Idioma-app/Idioma.xcodeproj
-# Press ⌘+R in Xcode to build and run
-
-# Backend (in a new terminal)
-cd Idioma-backend/functions
-npm install
-npm run serve  # Starts local Firebase emulators
-```
-
-**Need more details?** Check out our [Setup Guide](docs/setup.md) for complete installation instructions.
-
----
-
-## 🧠 Technical Challenges Solved
-
-### 1. **Real-Time AI Simplification**
-Implemented a smart caching layer that reduces API costs by 80% while maintaining fresh content. Articles are cached by URL and proficiency level, with automatic expiration.
-
-### 2. **Article Extraction**
-Built a robust content extraction pipeline using Mozilla's Readability algorithm and jsdom to parse complex news websites, handling various HTML structures and edge cases.
-
-### 3. **Serverless Architecture**
-Designed a scalable backend using Firebase Cloud Functions that automatically scales based on demand, eliminating server management overhead.
-
-### 4. **Performance Optimization**
-Implemented parallel async/await calls in Swift to fetch and display articles instantly, with smooth loading states and error handling.
-
-### 5. **Local Development**
-Created a complete local development environment using Firebase emulators, allowing full-stack development without cloud costs or internet dependency.
-
-**Built with** ❤️ **for language learners worldwide**
-
-</div>
+**Upcoming Priorities:**
+- ⏳ Offline caching layer
+- ⏳ In-line vocabulary lookup using the iOS Dictionary API
+- ⏳ Flashcards generation and Text-to-Speech
+- ⏳ Wikipedia search integrations
 
 ---
 
 ## 🙏 Acknowledgments
 
-Special thanks to the open-source community and these services that made Idioma possible:
-
-- **[NewsAPI](https://newsdata.io/)** - Reliable news aggregation
-- **[OpenAI](https://openai.com/)** - Powerful language models
-- **[Firebase](https://firebase.google.com/)** - Robust backend infrastructure
-- **[Mozilla Readability](https://github.com/mozilla/readability)** - Article extraction
+Built using these excellent technologies and services:
+- **[newsdata.io](https://newsdata.io/)** - News aggregation
+- **[OpenAI](https://openai.com/)** - Language models
+- **[Firebase](https://firebase.google.com/)** - Backend infrastructure
+- **[Mozilla Readability](https://github.com/mozilla/readability)** - HTML content extraction
 
 ---
 
 <div align="center">
-
-### 🌟 Star this repo if you find it interesting!
 
 *Made to help millions of language learners access authentic content* 
 
