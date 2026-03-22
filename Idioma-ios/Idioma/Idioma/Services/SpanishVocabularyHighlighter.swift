@@ -97,9 +97,27 @@ final class SpanishVocabularyHighlighter {
         return AttributedString(text)
     }
 
+    /// Applies vocab highlight colors on top of a pre-formatted attributed string
+    /// (e.g. from MarkdownFormatter), preserving existing heading/bold styling.
+    func makeAttributedString(formattedBase: NSAttributedString, matches: [VocabularyMatch]) -> AttributedString {
+        let mutable = NSMutableAttributedString(attributedString: formattedBase)
+
+        for match in matches {
+            guard match.range.location + match.range.length <= mutable.length else { continue }
+            mutable.addAttribute(.backgroundColor, value: highlightColor(for: match.categoryId), range: match.range)
+        }
+
+        if let attributed = try? AttributedString(mutable, including: \.uiKit) {
+            return attributed
+        }
+
+        return AttributedString(mutable.string)
+    }
+
     static func plainText(from htmlContent: String) -> String {
         var text = htmlContent
-        let replacements: [(String, String)] = [
+        // Strip HTML tags and entities
+        let htmlReplacements: [(String, String)] = [
             ("<[^>]+>", " "),
             ("&nbsp;", " "),
             ("&amp;", "&"),
@@ -109,7 +127,17 @@ final class SpanishVocabularyHighlighter {
             ("&#39;", "'")
         ]
 
-        for (pattern, replacement) in replacements {
+        for (pattern, replacement) in htmlReplacements {
+            text = text.replacingOccurrences(of: pattern, with: replacement, options: .regularExpression)
+        }
+
+        // Strip Markdown syntax (headings, bold/italic)
+        let markdownReplacements: [(String, String)] = [
+            (#"#{1,6}\s*"#, ""),                       // ## Heading → Heading
+            (#"\*{1,2}([^*]+)\*{1,2}"#, "$1"),         // **bold** or *italic* → text
+        ]
+
+        for (pattern, replacement) in markdownReplacements {
             text = text.replacingOccurrences(of: pattern, with: replacement, options: .regularExpression)
         }
 

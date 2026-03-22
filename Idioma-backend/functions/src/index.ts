@@ -588,7 +588,10 @@ export const extractArticle = onRequest({timeoutSeconds: 300}, async (request, r
       titleLength: (payload.title || "").length,
       textLength: (payload.textContent || "").length,
     });
-    await db.collection("articleContent").add(payload);
+    // Fire-and-forget: cache without blocking the response
+    db.collection("articleContent").add(payload)
+      .then(() => logger.info("Article content cached successfully", {url}))
+      .catch((error) => logger.error("Failed to cache article content", {error, url}));
 
     logger.info("Parsed and cached article content", {url, title: payload.title});
     response.json(payload);
@@ -665,6 +668,7 @@ export const simplifyArticle = onRequest({timeoutSeconds: 300}, async (request, 
         .where("originalUrl", "==", articleUrl)
         .where("cefrLevel", "==", cefrLevel)
         .where("language", "==", targetLanguage || "")
+        .where("outputFormat", "==", "markdown")
         .where("timestamp", ">", twentyFourHoursAgo)
         .orderBy("timestamp", "desc")
         .limit(1);
@@ -726,11 +730,17 @@ export const simplifyArticle = onRequest({timeoutSeconds: 300}, async (request, 
 
 ${languageInstruction}
 
-IMPORTANT RULES:
-1. Output language: ${targetLanguage || "SAME AS INPUT"} - NEVER translate to English unless the original is in English
-2. Preserve all <img> tags exactly as they appear
-3. Simplify vocabulary and sentence structure for CEFR ${cefrLevel} level
-4. Keep the same meaning and all key information
+FORMATTING RULES (strict):
+- Use ONLY these Markdown features: ## for section headings, **bold** for key terms, and blank lines between paragraphs.
+- Do NOT use: bullet lists, numbered lists, links, images, blockquotes, code blocks, horizontal rules, or any HTML tags.
+- Separate paragraphs with a single blank line.
+- Use ## headings to organize the article into 2-4 sections.
+- Use **bold** sparingly to highlight important vocabulary or key terms (2-5 per section).
+
+CONTENT RULES:
+1. Output language: ${targetLanguage || "SAME AS INPUT"} — NEVER translate to English unless the original is in English.
+2. Simplify vocabulary and sentence structure for CEFR ${cefrLevel} level.
+3. Keep the same meaning and all key information.
 
 ${cefrLevel} guidelines:
 ${cefrLevel === "A2" ? "- Use simple present/past tense, 10-15 word sentences, basic vocabulary" : ""}
@@ -738,11 +748,13 @@ ${cefrLevel === "B1" ? "- Use mix of simple/compound sentences, common vocabular
 ${cefrLevel === "B2" ? "- Use varied sentences, sophisticated vocabulary, detailed explanations" : ""}
 ${cefrLevel === "C1" ? "- Use complex structures, advanced vocabulary, nuanced explanations" : ""}
 
-Return ONLY the simplified HTML content in ${targetLanguage || "the original language"}, no explanations.`;
+Return ONLY the simplified article. No preamble, no explanations.`;
 
-    const userPrompt = `Simplify this article for ${cefrLevel} level learners. ` +
-      `OUTPUT LANGUAGE: ${targetLanguage || "Keep in original language (DO NOT translate to English)"}\n\n` +
-      `Article content:\n${originalArticle.llmHtml}`;
+    const userPrompt = `Simplify this article for CEFR ${cefrLevel} level learners.\n` +
+      `LANGUAGE: ${targetLanguage || "Keep in original language (DO NOT translate to English)"}\n` +
+      "FORMAT: Only ## headings, **bold** key terms, and paragraphs separated by blank lines. " +
+      "No lists, links, images, or HTML.\n\n" +
+      `Article:\n${originalArticle.llmHtml}`;
 
     // 4) Call OpenAI API with conditional streaming
     logger.info("Calling OpenAI API", {
@@ -802,10 +814,11 @@ Return ONLY the simplified HTML content in ${targetLanguage || "the original lan
         originalUrl: articleUrl,
         cefrLevel,
         language: targetLanguage || "",
+        outputFormat: "markdown", // LLM now outputs Markdown instead of HTML
         title: originalArticle.title,
         byline: originalArticle.byline,
         siteName: originalArticle.siteName,
-        simplifiedHtml: fullContent,
+        simplifiedHtml: fullContent, // Field name kept for compatibility; contains Markdown
         leadImageUrl: originalArticle.leadImageUrl,
         images: originalArticle.images,
         timestamp: Timestamp.now(),
@@ -877,10 +890,11 @@ Return ONLY the simplified HTML content in ${targetLanguage || "the original lan
         originalUrl: articleUrl,
         cefrLevel,
         language: targetLanguage || "",
+        outputFormat: "markdown", // LLM now outputs Markdown instead of HTML
         title: originalArticle.title,
         byline: originalArticle.byline,
         siteName: originalArticle.siteName,
-        simplifiedHtml,
+        simplifiedHtml, // Field name kept for compatibility; contains Markdown
         leadImageUrl: originalArticle.leadImageUrl,
         images: originalArticle.images,
         timestamp: Timestamp.now(),
@@ -895,7 +909,14 @@ Return ONLY the simplified HTML content in ${targetLanguage || "the original lan
         imagesCount: originalArticle.images?.length || 0,
       });
 
-      await db.collection("simplifiedArticles").add(simplifiedPayload);
+      // Fire-and-forget: cache without blocking the response
+      db.collection("simplifiedArticles").add(simplifiedPayload)
+        .then(() => logger.info("Simplified article cached successfully", {
+          url: articleUrl,
+          level: cefrLevel,
+          language: targetLanguage,
+        }))
+        .catch((error) => logger.error("Failed to cache simplified article", {error, url: articleUrl}));
 
       logger.info("Simplified article cached", {
         url: articleUrl,

@@ -17,6 +17,7 @@ class APIService {
     // Find this in your Firebase Console > Functions > Dashboard
     // It should look like: https://us-central1-YOUR-PROJECT-ID.cloudfunctions.net
     private let baseURL = "https://us-central1-idioma-87bed.cloudfunctions.net"
+    // private let baseURL = "http://127.0.0.1:5001/idioma-87bed/us-central1"
     
     // Private init for singleton
     private init() {}
@@ -146,8 +147,8 @@ class APIService {
         return content
     }
     
-    // MARK: - Simplify Article
-    /// Simplifies article content for a specific CEFR level
+    // MARK: - Simplify Article (Non-Streaming)
+    /// Simplifies article content for a specific CEFR level (waits for full response)
     /// - Parameters:
     ///   - url: The article URL (must have been extracted first)
     ///   - level: CEFR level (A2, B1, B2, C1)
@@ -161,10 +162,9 @@ class APIService {
         var queryItems = [
             URLQueryItem(name: "url", value: url),
             URLQueryItem(name: "level", value: level.rawValue),
-            URLQueryItem(name: "stream", value: "false") // Non-streaming for simplicity
+            URLQueryItem(name: "stream", value: "false")
         ]
         
-        // Add language parameter if provided to keep article in original language
         if let language = language {
             queryItems.append(URLQueryItem(name: "language", value: language))
         }
@@ -201,6 +201,86 @@ class APIService {
         print("✅ [API] Successfully simplified article")
         return simplified
     }
+    
+    // MARK: - Simplify Article (SSE Streaming)
+    /// Simplifies article content with SSE streaming — yields text chunks as they arrive from OpenAI.
+    /// This lets the UI show text appearing progressively instead of waiting for the full response.
+    /// - Parameters:
+    ///   - url: The article URL (must have been extracted first)
+    ///   - level: CEFR level (A2, B1, B2, C1)
+    ///   - language: Target language name to keep article in original language
+    /// - Returns: An AsyncThrowingStream of content chunks
+    func simplifyArticleStreaming(url: String, level: CEFRLevel, language: String? = nil) -> AsyncThrowingStream<String, Error> {
+        print("\n🔵 [API] simplifyArticleStreaming called")
+        print("📍 URL: \(url), Level: \(level.rawValue), Language: \(language ?? "not specified")")
+        
+        return AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    var components = URLComponents(string: "\(baseURL)/simplifyArticle")!
+                    var queryItems = [
+                        URLQueryItem(name: "url", value: url),
+                        URLQueryItem(name: "level", value: level.rawValue),
+                        URLQueryItem(name: "stream", value: "true")
+                    ]
+                    
+                    if let language = language {
+                        queryItems.append(URLQueryItem(name: "language", value: language))
+                    }
+                    components.queryItems = queryItems
+                    
+                    guard let requestURL = components.url else {
+                        continuation.finish(throwing: APIError.invalidURL)
+                        return
+                    }
+                    
+                    print("🌐 [API] Streaming URL: \(requestURL.absoluteString)")
+                    
+                    let (bytes, response) = try await URLSession.shared.bytes(from: requestURL)
+                    
+                    guard let httpResponse = response as? HTTPURLResponse else {
+                        continuation.finish(throwing: APIError.invalidResponse)
+                        return
+                    }
+                    
+                    guard httpResponse.statusCode == 200 else {
+                        print("❌ [API] Streaming HTTP Error: \(httpResponse.statusCode)")
+                        continuation.finish(throwing: APIError.httpError(statusCode: httpResponse.statusCode))
+                        return
+                    }
+                    
+                    print("📡 [API] SSE stream connected")
+                    
+                    for try await line in bytes.lines {
+                        // SSE format: "data: {json}\n\n" — skip empty lines and non-data lines
+                        guard line.hasPrefix("data: ") else { continue }
+                        
+                        let jsonString = String(line.dropFirst(6))
+                        guard let jsonData = jsonString.data(using: .utf8),
+                              let event = try? JSONDecoder().decode(SSEEvent.self, from: jsonData) else {
+                            continue
+                        }
+                        
+                        if event.done {
+                            print("✅ [API] SSE stream completed (tokens: \(event.totalTokens ?? 0))")
+                            continuation.finish()
+                            return
+                        }
+                        
+                        if let content = event.content, !content.isEmpty {
+                            continuation.yield(content)
+                        }
+                    }
+                    
+                    // Stream ended without a done signal — finish gracefully
+                    continuation.finish()
+                } catch {
+                    print("❌ [API] Streaming error: \(error.localizedDescription)")
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
 }
 
 // MARK: - API Errors
@@ -225,4 +305,13 @@ enum APIError: Error, LocalizedError {
             return "Network error: \(error.localizedDescription)"
         }
     }
+}
+
+// MARK: - SSE Event
+/// Model for parsing Server-Sent Events from the streaming simplifyArticle endpoint.
+/// Each SSE line is: `data: {"content":"...","done":false}\n\n`
+private struct SSEEvent: Codable {
+    let content: String?
+    let done: Bool
+    let totalTokens: Int?
 }

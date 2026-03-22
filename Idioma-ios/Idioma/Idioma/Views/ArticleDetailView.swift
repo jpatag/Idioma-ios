@@ -23,6 +23,7 @@ struct ArticleDetailView: View {
     @State private var simplifiedContent: SimplifiedArticle?
     @State private var isLoading: Bool = true
     @State private var isSimplifying: Bool = false
+    @State private var streamingText: String = ""
     @State private var errorMessage: String?
     @State private var isBookmarked: Bool = false
     @State private var showingOriginal: Bool = true
@@ -193,17 +194,34 @@ struct ArticleDetailView: View {
         }
     }
     
-    // MARK: - Article Content Section
     @ViewBuilder
     private var articleContentSection: some View {
         if isSimplifying {
-            HStack {
-                ProgressView()
-                Text("Simplifying for \(currentLevel?.displayName ?? "") level...")
-                    .foregroundColor(.secondary)
+            if streamingText.isEmpty {
+                // Waiting for first token from the stream
+                HStack {
+                    ProgressView()
+                    Text("Simplifying for \(currentLevel?.displayName ?? "") level...")
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .frame(maxWidth: .infinity)
+            } else {
+                // Show streaming text with formatting (paragraph breaks, headings, bold)
+                let fmt = MarkdownFormatter.format(streamingText)
+                if let attrStr = try? AttributedString(fmt.attributedString, including: \.uiKit) {
+                    Text(attrStr)
+                        .lineSpacing(8)
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 16)
+                } else {
+                    Text(fmt.plainText)
+                        .font(.system(.body, design: .serif))
+                        .lineSpacing(8)
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 16)
+                }
             }
-            .padding()
-            .frame(maxWidth: .infinity)
         } else if showingOriginal {
             ArticleTextContent(
                 htmlContent: articleContent?.textContent ?? article.content ?? article.description ?? "No content available.",
@@ -290,26 +308,59 @@ struct ArticleDetailView: View {
         }
     }
     
-    // MARK: - Simplify for New Level
+    // MARK: - Simplify for New Level (Streaming)
     private func simplifyForLevel(_ level: CEFRLevel) {
         guard let urlString = article.link else { return }
         
-        // Get the article's language name for simplification (use full name for better AI understanding)
         let articleLanguage = article.languageName ?? article.language ?? authService.targetLanguage
-        print("📝 [ArticleDetail] Simplifying article for level \(level.rawValue) in language: \(articleLanguage)")
+        print("📝 [ArticleDetail] Streaming simplification for level \(level.rawValue) in language: \(articleLanguage)")
         
         isSimplifying = true
+        streamingText = ""
         
         Task {
             do {
-                let simplified = try await APIService.shared.simplifyArticle(
+                var buffer = ""
+                var lastFlush = Date()
+                
+                for try await chunk in APIService.shared.simplifyArticleStreaming(
                     url: urlString,
                     level: level,
                     language: articleLanguage
-                )
+                ) {
+                    buffer += chunk
+                    let now = Date()
+                    // Flush to UI every 100ms to avoid excessive re-renders
+                    if now.timeIntervalSince(lastFlush) >= 0.1 {
+                        let text = buffer
+                        buffer = ""
+                        lastFlush = now
+                        await MainActor.run {
+                            self.streamingText += text
+                        }
+                    }
+                }
                 
+                // Flush any remaining buffer
+                if !buffer.isEmpty {
+                    await MainActor.run {
+                        self.streamingText += buffer
+                    }
+                }
+                
+                // Streaming complete — build the final SimplifiedArticle so highlighting can kick in
                 await MainActor.run {
-                    self.simplifiedContent = simplified
+                    self.simplifiedContent = SimplifiedArticle(
+                        originalUrl: urlString,
+                        cefrLevel: level.rawValue,
+                        title: self.articleContent?.title ?? self.article.title,
+                        byline: self.articleContent?.byline,
+                        siteName: self.articleContent?.siteName,
+                        simplifiedHtml: self.streamingText,
+                        leadImageUrl: self.articleContent?.leadImageUrl ?? self.article.image_url,
+                        images: self.articleContent?.images,
+                        tokensUsed: nil
+                    )
                     self.isSimplifying = false
                 }
             } catch {
@@ -372,24 +423,32 @@ struct ArticleTextContent: View {
 
     @State private var renderedText = AttributedString()
 
-    private var plainText: String {
-        SpanishVocabularyHighlighter.plainText(from: htmlContent)
-    }
-
     private var renderKey: String {
         let categoryKey = activeCategoryIDs.sorted().map(String.init).joined(separator: ",")
         let levelKey = vocabularyLevelIDs.map(\.rawValue).sorted().joined(separator: ",")
         return "\(languageCode ?? "")|\(levelKey)|\(categoryKey)|\(htmlContent.hashValue)"
     }
 
+    private var formattedResult: MarkdownFormatter.Result {
+        MarkdownFormatter.format(htmlContent)
+    }
+
     private var fallbackText: AttributedString {
-        AttributedString(plainText)
+        let fmt = formattedResult
+        return (try? AttributedString(fmt.attributedString, including: \.uiKit)) ?? AttributedString(fmt.plainText)
     }
 
     private func rebuildAttributedText() async {
-        renderedText = fallbackText
+        let fmt = MarkdownFormatter.format(htmlContent)
 
-        guard !plainText.isEmpty else {
+        // Set initial formatted text (headings + bold, no highlights yet)
+        if let attr = try? AttributedString(fmt.attributedString, including: \.uiKit) {
+            renderedText = attr
+        } else {
+            renderedText = AttributedString(fmt.plainText)
+        }
+
+        guard !fmt.plainText.isEmpty else {
             renderedText = AttributedString()
             return
         }
@@ -400,7 +459,9 @@ struct ArticleTextContent: View {
             return
         }
 
-        let text = plainText
+        let text = fmt.plainText
+        let baseAttrStr = NSAttributedString(attributedString: fmt.attributedString)
+
         let matches = await Task.detached(priority: .userInitiated) {
             SpanishVocabularyHighlighter.shared.highlightMatches(
                 in: text,
@@ -422,7 +483,7 @@ struct ArticleTextContent: View {
             let partialMatches = Array(matches.prefix(endIndex))
             let partialText = await Task.detached(priority: .userInitiated) {
                 SpanishVocabularyHighlighter.shared.makeAttributedString(
-                    text: text,
+                    formattedBase: baseAttrStr,
                     matches: partialMatches
                 )
             }.value
@@ -439,7 +500,6 @@ struct ArticleTextContent: View {
 
     var body: some View {
         Text(renderedText.characters.isEmpty ? fallbackText : renderedText)
-            .font(.system(.body, design: .serif))
             .lineSpacing(8)
             .foregroundColor(.primary)
             .task(id: renderKey) {
