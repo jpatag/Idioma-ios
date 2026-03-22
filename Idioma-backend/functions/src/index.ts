@@ -27,6 +27,7 @@ import * as dotenv from "dotenv";
 import * as path from "path";
 import * as admin from "firebase-admin";
 import {Timestamp} from "firebase-admin/firestore";
+import * as fs from "fs";
 import {JSDOM} from "jsdom";
 import {Readability} from "@mozilla/readability";
 import OpenAI from "openai";
@@ -408,7 +409,10 @@ export const extractArticle = onRequest({timeoutSeconds: 300}, async (request, r
     if (!cached.empty) {
       const data = cached.docs[0].data();
       logger.info("Returning cached article content", {url});
-      response.json(data);
+      response.json({
+        ...data,
+        cacheHit: true,
+      });
       return;
     }
 
@@ -657,39 +661,84 @@ export const simplifyArticle = onRequest({timeoutSeconds: 300}, async (request, 
   }
 
   try {
-    // 1) Check cache for this URL + level + language combination (24 hour cache)
-    const twentyFourHoursAgo = Timestamp.fromDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
+    // 1) Check cache for this URL + level + language (24 hour cache)
+    // Use a deterministic doc ID to avoid composite index requirements
+    const simplifiedDocId = Buffer.from(
+      `${articleUrl}|${cefrLevel}|${targetLanguage || ""}|markdown`
+    ).toString("base64url");
 
-    // Build cache query - include language to ensure we return content in the right language
     let cached;
     try {
-      const cacheQuery = db
+      const cachedDoc = await db
         .collection("simplifiedArticles")
-        .where("originalUrl", "==", articleUrl)
-        .where("cefrLevel", "==", cefrLevel)
-        .where("language", "==", targetLanguage || "")
-        .where("outputFormat", "==", "markdown")
-        .where("timestamp", ">", twentyFourHoursAgo)
-        .orderBy("timestamp", "desc")
-        .limit(1);
+        .doc(simplifiedDocId)
+        .get();
 
-      cached = await cacheQuery.get();
+      if (cachedDoc.exists) {
+        const data = cachedDoc.data()!;
+        const docTimestamp = data.timestamp?.toDate?.() ||
+          new Date(0);
+        const age = Date.now() - docTimestamp.getTime();
+        // 24-hour TTL
+        if (age < 24 * 60 * 60 * 1000) {
+          cached = {empty: false, data};
+        } else {
+          cached = {empty: true, data: null};
+        }
+      } else {
+        cached = {empty: true, data: null};
+      }
     } catch (cacheError) {
-      // Index might not be ready yet, skip cache and regenerate
-      logger.warn("Cache query failed (index may be building), regenerating", {
-        error: cacheError instanceof Error ? cacheError.message : cacheError,
+      logger.warn("Cache lookup failed, regenerating", {
+        error: cacheError instanceof Error ?
+          cacheError.message : cacheError,
       });
-      cached = {empty: true, docs: []};
+      cached = {empty: true, data: null};
     }
 
-    if (!cached.empty) {
-      const data = cached.docs[0].data();
+    if (!cached.empty && cached.data) {
+      const data = cached.data;
       logger.info("Returning cached simplified article", {
         url: articleUrl,
         level: cefrLevel,
         language: targetLanguage,
+        streaming: enableStream,
       });
-      response.json(data);
+
+      // If client requested SSE, return cached content as SSE
+      if (enableStream) {
+        response.setHeader(
+          "Content-Type", "text/plain; charset=utf-8"
+        );
+        response.setHeader("Transfer-Encoding", "chunked");
+        response.setHeader("Cache-Control", "no-cache");
+        response.setHeader("Connection", "keep-alive");
+        response.setHeader(
+          "Access-Control-Allow-Origin", "*"
+        );
+        response.setHeader(
+          "Access-Control-Allow-Headers", "Content-Type"
+        );
+        response.removeHeader("Content-Length");
+
+        const content = data.simplifiedHtml || "";
+        response.write(
+          `data: ${JSON.stringify({
+            content, done: false, cacheHit: true,
+          })}\n\n`
+        );
+        response.write(
+          `data: ${JSON.stringify({
+            content: "", done: true, totalTokens: 0, cacheHit: true,
+          })}\n\n`
+        );
+        response.end();
+      } else {
+        response.json({
+          ...data,
+          cacheHit: true,
+        });
+      }
       return;
     }
 
@@ -826,13 +875,20 @@ Return ONLY the simplified article. No preamble, no explanations.`;
       };
 
       // Cache asynchronously - don't block the response
-      db.collection("simplifiedArticles").add(simplifiedPayload)
-        .then(() => logger.info("Streamed result cached successfully", {
-          url: articleUrl,
-          level: cefrLevel,
-          language: targetLanguage,
-        }))
-        .catch((error) => logger.error("Failed to cache streamed result", {error, url: articleUrl}));
+      db.collection("simplifiedArticles")
+        .doc(simplifiedDocId)
+        .set(simplifiedPayload)
+        .then(() => logger.info(
+          "Streamed result cached successfully", {
+            url: articleUrl,
+            level: cefrLevel,
+            language: targetLanguage,
+          }
+        ))
+        .catch((error) => logger.error(
+          "Failed to cache streamed result",
+          {error, url: articleUrl}
+        ));
     } else {
       // Existing non-streaming logic
       const completion = await getOpenAI().chat.completions.create({
@@ -910,13 +966,20 @@ Return ONLY the simplified article. No preamble, no explanations.`;
       });
 
       // Fire-and-forget: cache without blocking the response
-      db.collection("simplifiedArticles").add(simplifiedPayload)
-        .then(() => logger.info("Simplified article cached successfully", {
-          url: articleUrl,
-          level: cefrLevel,
-          language: targetLanguage,
-        }))
-        .catch((error) => logger.error("Failed to cache simplified article", {error, url: articleUrl}));
+      db.collection("simplifiedArticles")
+        .doc(simplifiedDocId)
+        .set(simplifiedPayload)
+        .then(() => logger.info(
+          "Simplified article cached successfully", {
+            url: articleUrl,
+            level: cefrLevel,
+            language: targetLanguage,
+          }
+        ))
+        .catch((error) => logger.error(
+          "Failed to cache simplified article",
+          {error, url: articleUrl}
+        ));
 
       logger.info("Simplified article cached", {
         url: articleUrl,
@@ -939,6 +1002,312 @@ Return ONLY the simplified article. No preamble, no explanations.`;
 
     response.status(500).json({
       error: "Failed to simplify article",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Quiz generation — on-demand AI quiz for Spanish articles
+// ---------------------------------------------------------------------------
+
+// CEFR level → vocabulary level ID mapping (matches iOS SpanishVocabularyHighlighter)
+const CEFR_TO_VOCAB_LEVEL: Record<string, string> = {
+  A2: "L1",
+  B1: "L2",
+  B2: "L3",
+  C1: "L3",
+};
+
+interface VocabEntry {
+  word: string;
+  categoryId: number;
+  levelId: string;
+}
+
+let cachedVocab: VocabEntry[] | null = null;
+
+/**
+ * Parse the bundled SpanishTop1000Words.csv and cache in memory.
+ * CSV columns: WORD ID, word, Frequency, CAT ID, LEVEL ID
+ * @return {VocabEntry[]} Array of parsed vocabulary entries.
+ */
+function loadVocabulary(): VocabEntry[] {
+  if (cachedVocab) return cachedVocab;
+
+  const csvPath = path.join(__dirname, "../src/SpanishTop1000Words.csv");
+  const raw = fs.readFileSync(csvPath, "utf8");
+  const lines = raw.split(/\r?\n/);
+  const entries: VocabEntry[] = [];
+
+  for (const line of lines.slice(1)) {
+    if (!line.trim()) continue;
+    const cols = line.split(",");
+    if (cols.length < 5) continue;
+
+    const word = cols[1].trim();
+    const categoryId = parseInt(cols[3].trim(), 10);
+    const levelId = cols[4].trim();
+
+    if (word && !isNaN(categoryId) && levelId) {
+      entries.push({word, categoryId, levelId});
+    }
+  }
+
+  logger.info("Loaded Spanish vocabulary for quiz", {count: entries.length});
+  cachedVocab = entries;
+  return entries;
+}
+
+export const generateQuiz = onRequest({timeoutSeconds: 120}, async (request, response) => {
+  const url = (request.query.url as string) || "";
+  const level = (request.query.level as string) || "B1";
+  const language = (request.query.language as string) || "";
+  const categoriesParam = (request.query.categories as string) || "";
+
+  logger.info("generateQuiz called", {url, level, language, categories: categoriesParam});
+
+  // --- Validation ---
+  if (!url) {
+    response.status(400).json({error: "Missing 'url' parameter"});
+    return;
+  }
+
+  if (language.toLowerCase() !== "spanish") {
+    response.status(400).json({error: "Quiz generation is only supported for Spanish articles"});
+    return;
+  }
+
+  if (!["A2", "B1", "B2", "C1"].includes(level)) {
+    response.status(400).json({error: "Invalid level. Use: A2, B1, B2, or C1"});
+    return;
+  }
+
+  const categoryIds = categoriesParam ?
+    categoriesParam.split(",").map((s) => parseInt(s.trim(), 10))
+      .filter((n) => !isNaN(n)) :
+    [];
+
+  try {
+    // 1) Check Firestore cache using deterministic doc ID
+    const quizDocId = Buffer.from(
+      `${url}|${level}`
+    ).toString("base64url");
+
+    let cached;
+    try {
+      const cachedDoc = await db
+        .collection("quizzes")
+        .doc(quizDocId)
+        .get();
+
+      if (cachedDoc.exists) {
+        const data = cachedDoc.data()!;
+        const docTimestamp = data.timestamp?.toDate?.() ||
+          new Date(0);
+        const age = Date.now() - docTimestamp.getTime();
+        if (age < 24 * 60 * 60 * 1000) {
+          cached = {empty: false, data};
+        } else {
+          cached = {empty: true, data: null};
+        }
+      } else {
+        cached = {empty: true, data: null};
+      }
+    } catch (cacheError) {
+      logger.warn(
+        "Quiz cache lookup failed", {
+          error: cacheError instanceof Error ?
+            cacheError.message : cacheError,
+        }
+      );
+      cached = {empty: true, data: null};
+    }
+
+    if (!cached.empty && cached.data) {
+      logger.info("Returning cached quiz", {url, level});
+      response.json({
+        ...cached.data,
+        cacheHit: true,
+      });
+      return;
+    }
+
+    // 2) Get article text (prefer simplified, fall back to extracted)
+    let articleText = "";
+    let articleTitle = "";
+
+    const simplifiedQuery = db.collection("simplifiedArticles")
+      .where("originalUrl", "==", url)
+      .where("cefrLevel", "==", level)
+      .orderBy("timestamp", "desc")
+      .limit(1);
+    const simplifiedSnap = await simplifiedQuery.get();
+
+    if (!simplifiedSnap.empty) {
+      const data = simplifiedSnap.docs[0].data();
+      articleText = data.simplifiedHtml || "";
+      articleTitle = data.title || "";
+    } else {
+      const contentQuery = db.collection("articleContent")
+        .where("url", "==", url)
+        .orderBy("timestamp", "desc")
+        .limit(1);
+      const contentSnap = await contentQuery.get();
+      if (contentSnap.empty) {
+        response.status(404).json({
+          error: "Article not found",
+          details: "Please extract and simplify the article first",
+        });
+        return;
+      }
+      const data = contentSnap.docs[0].data();
+      articleText = data.textContent || data.llmHtml || "";
+      articleTitle = data.title || "";
+    }
+
+    // 3) Load and filter vocabulary
+    const vocab = loadVocabulary();
+    const targetVocabLevel = CEFR_TO_VOCAB_LEVEL[level];
+    const filteredWords = vocab.filter((v) => {
+      const levelMatch = v.levelId === targetVocabLevel;
+      const categoryMatch = categoryIds.length === 0 || categoryIds.includes(v.categoryId);
+      return levelMatch && categoryMatch;
+    });
+
+    // Pick up to 15 random words for the prompt
+    const shuffled = filteredWords.sort(() => Math.random() - 0.5);
+    const selectedWords = shuffled.slice(0, 15).map((v) => v.word);
+    const wordListStr = selectedWords.length > 0 ?
+      "Target vocabulary words for this level: " +
+      `${selectedWords.join(", ")}` :
+      "No specific vocabulary words available for filtering.";
+
+    logger.info("Vocabulary filtered for quiz", {
+      level,
+      vocabLevel: targetVocabLevel,
+      totalFiltered: filteredWords.length,
+      selectedCount: selectedWords.length,
+    });
+
+    // 4) Build OpenAI prompt
+    // eslint-disable-next-line max-len
+    const quizSystemPrompt = `You are a Spanish language learning quiz generator. Generate exactly 3 multiple-choice questions based on the provided article.
+
+You MUST respond with ONLY valid JSON. ` +
+      `The JSON must match this exact schema:
+{
+  "questions": [
+    {
+      "questionNumber": 1,
+      "questionText": "...",
+      "options": ["A", "B", "C", "D"],
+      "correctAnswerIndex": 0
+    }
+  ]
+}
+
+RULES:
+` +
+      "1. Question 1: Reading comprehension. " +
+      `Test understanding of the main idea or key details.
+` +
+      "2. Question 2: Vocabulary emphasis. Test a specific " +
+      "word from the target vocabulary list in context. " +
+      `Ask what the word means or how it is used.
+` +
+      "3. Question 3: Context/Inference. Test the reader's " +
+      `ability to infer meaning or draw conclusions.
+` +
+      `4. All questions and options MUST be in Spanish.
+` +
+      `5. Each question must have exactly 4 options.
+` +
+      `6. correctAnswerIndex must be 0, 1, 2, or 3.
+` +
+      "7. Questions should be appropriate for CEFR " +
+      `${level} level learners.
+` +
+      "8. Return ONLY the JSON object. No other text.";
+
+    const quizUserPrompt =
+      `Article title: ${articleTitle}\n\n` +
+      `${wordListStr}\n\nArticle text:\n` +
+      `${articleText.substring(0, 6000)}`;
+
+    // 5) Call OpenAI
+    const completion = await getOpenAI().chat.completions.create({
+      model: "gpt-5-nano",
+      messages: [
+        {role: "system", content: quizSystemPrompt},
+        {role: "user", content: quizUserPrompt},
+      ],
+      max_completion_tokens: 4000,
+      stream: false,
+    });
+
+    const rawContent = completion.choices[0]?.message?.content || "";
+    logger.info("OpenAI quiz response received", {
+      length: rawContent.length,
+      tokens: completion.usage?.total_tokens || 0,
+    });
+
+    // Parse JSON (strip markdown code fences if present)
+    let cleanJson = rawContent.trim();
+    if (cleanJson.startsWith("```")) {
+      cleanJson = cleanJson.replace(/^```(?:json)?\s*/, "").replace(/```\s*$/, "").trim();
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(cleanJson);
+    } catch (parseErr) {
+      logger.error("Failed to parse quiz JSON from OpenAI", {
+        raw: rawContent.substring(0, 500),
+        error: parseErr instanceof Error ? parseErr.message : parseErr,
+      });
+      response.status(500).json({
+        error: "Failed to parse quiz response",
+        details: "OpenAI returned invalid JSON",
+      });
+      return;
+    }
+
+    // 6) Build payload and cache
+    const quizPayload = {
+      url,
+      level,
+      language,
+      questions: parsed.questions,
+      timestamp: Timestamp.now(),
+      tokensUsed: completion.usage?.total_tokens || 0,
+    };
+
+    // Fire-and-forget cache write
+    db.collection("quizzes")
+      .doc(quizDocId)
+      .set(quizPayload)
+      .then(() => logger.info(
+        "Quiz cached successfully", {url, level}
+      ))
+      .catch((error) => logger.error(
+        "Failed to cache quiz", {error, url}
+      ));
+
+    response.json(quizPayload);
+  } catch (error) {
+    logger.error("Error in generateQuiz", {
+      url,
+      level,
+      error: error instanceof Error ? {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+      } : error,
+    });
+
+    response.status(500).json({
+      error: "Failed to generate quiz",
       details: error instanceof Error ? error.message : "Unknown error",
     });
   }
