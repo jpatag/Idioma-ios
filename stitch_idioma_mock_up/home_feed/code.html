@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Language Learning App</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary": "#F472B6",
+              "background-light": "#FFF7FA",
+              "background-dark": "#201A1D",
+              "text-light-primary": "#201A1D",
+              "text-light-secondary": "#795662",
+              "text-dark-primary": "#FFD8E4",
+              "text-dark-secondary": "#E7BDC8",
+              "surface-light": "#FFD8E4",
+              "surface-dark": "#362F31"
+            },
+            fontFamily: {
+              "display": ["Work Sans", "sans-serif"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-display">
+<div class="relative flex h-auto min-h-screen w-full flex-col bg-background-light dark:bg-background-dark overflow-x-hidden pb-24">
+<div class="flex items-center p-4 pb-2 justify-between bg-background-light dark:bg-background-dark sticky top-0 z-10">
+<div class="flex size-12 shrink-0 items-center justify-start text-text-light-primary dark:text-text-dark-primary">
+<span class="material-symbols-outlined text-3xl">translate</span>
+</div>
+<h1 class="text-lg font-bold leading-tight tracking-[-0.015em] text-text-light-primary dark:text-text-dark-primary flex-1 text-center">Today's Articles</h1>
+<div class="flex w-12 items-center justify-end">
+<button class="flex max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 bg-transparent text-text-light-primary dark:text-text-dark-primary gap-2 text-base font-bold leading-normal tracking-[0.015em] min-w-0 p-0">
+<span class="material-symbols-outlined">search</span>
+</button>
+</div>
+</div>
+<div class="flex gap-2 p-4 pt-2 overflow-x-auto">
+<button class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-lg bg-primary/20 dark:bg-primary/30 pl-4 pr-2">
+<p class="text-text-light-primary dark:text-text-dark-primary text-sm font-medium leading-normal">Spanish</p>
+<span class="material-symbols-outlined text-text-light-primary dark:text-text-dark-primary text-xl">expand_more</span>
+</button>
+<button class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-lg bg-surface-light dark:bg-surface-dark pl-4 pr-2">
+<p class="text-text-light-primary dark:text-text-dark-primary text-sm font-medium leading-normal">French</p>
+<span class="material-symbols-outlined text-text-light-primary dark:text-text-dark-primary text-xl">expand_more</span>
+</button>
+<button class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-lg bg-surface-light dark:bg-surface-dark pl-4 pr-2">
+<p class="text-text-light-primary dark:text-text-dark-primary text-sm font-medium leading-normal">German</p>
+<span class="material-symbols-outlined text-text-light-primary dark:text-text-dark-primary text-xl">expand_more</span>
+</button>
+</div>
+<div class="flex gap-2 px-4 pb-2">
+<button class="flex h-8 flex-1 items-center justify-center gap-x-2 rounded-lg bg-primary/20 dark:bg-primary/30">
+<p class="text-text-light-primary dark:text-text-dark-primary text-sm font-medium leading-normal">Beginner</p>
+</button>
+<button class="flex h-8 flex-1 items-center justify-center gap-x-2 rounded-lg bg-surface-light dark:bg-surface-dark">
+<p class="text-text-light-primary dark:text-text-dark-primary text-sm font-medium leading-normal">Intermediate</p>
+</button>
+<button class="flex h-8 flex-1 items-center justify-center gap-x-2 rounded-lg bg-surface-light dark:bg-surface-dark">
+<p class="text-text-light-primary dark:text-text-dark-primary text-sm font-medium leading-normal">Advanced</p>
+</button>
+</div>
+<div class="flex flex-col gap-4 px-4 pt-4">
+<div class="w-full @container bg-white dark:bg-surface-dark/40 rounded-xl overflow-hidden shadow-sm">
+<div class="flex flex-col items-stretch justify-start">
+<div class="w-full bg-center bg-no-repeat aspect-video bg-cover" data-alt="Microscopic view of a new deep sea creature" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCbMYRpaYwZrovkow32MzaJTddw7-I9D9bLcTHsJfvV1XR3BsozjhFF-eOnu-w8F6LEVHmy5-moz2NCGLI-r1xXl42rK1MM3V8HJvy9tSq16GwRw_ZeTJed2JbfGJSCIu3RpL2yF37tETndHV6NesJBkaH9Kr32KLw1PZhfBZa-O0y9kGFgL-sOAEvFSZWjorMsJ3FoplkLycF5R6vPzXs5va2PXRPNSjqI4vj_yqO6aYm05JZIdf8elfs-MHmo-8kn9MI9eaps0A");'></div>
+<div class="flex w-full grow flex-col items-stretch justify-center gap-2 p-4">
+<p class="text-text-light-secondary dark:text-text-dark-secondary text-sm font-normal leading-normal">BBC News - 2 hours ago</p>
+<p class="text-text-light-primary dark:text-text-dark-primary text-lg font-bold leading-tight tracking-[-0.015em]">Scientists Discover New Species in the Deep Ocean</p>
+<p class="text-text-light-secondary dark:text-text-dark-secondary text-base font-normal leading-normal">A groundbreaking expedition has revealed several previously unknown marine creatures.</p>
+<div class="flex items-center justify-between gap-3 pt-2">
+<div class="inline-flex h-7 shrink-0 items-center justify-center gap-x-2 rounded-full bg-surface-light dark:bg-surface-dark px-3">
+<p class="text-text-light-primary dark:text-text-dark-primary text-xs font-medium leading-normal">Beginner</p>
+</div>
+<button class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-primary text-white text-sm font-bold leading-normal">
+<span class="truncate">Read Article</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<div class="w-full @container bg-white dark:bg-surface-dark/40 rounded-xl overflow-hidden shadow-sm">
+<div class="flex flex-col items-stretch justify-start">
+<div class="w-full bg-center bg-no-repeat aspect-video bg-cover" data-alt="Abstract representation of artificial intelligence network" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBcoNDN6_BaVWdIMM1-5G-jUtxqBjkHqK5JTS-_pWThHXmnH0QDSEwMzMJv22tZnQkRh42o7S8kkroEeaMNsrFKQ8YYyMMezbjcUHqbN5UxmFgZSqvf0VwEy7eAwNiqX2s7yrqslIqn_aU-pa48ntLk3Y3cUFJ5_qzgMMUBoefIAYwV0-50cmvxk4fxCw-l7Rtf5voByMe3uyStSg8yGTdwpG8fdY3hUr9wrxGKAV_hDW3Es-sYmv2WIOK2RTmC-xyH7b5TsqIqqQ");'></div>
+<div class="flex w-full grow flex-col items-stretch justify-center gap-2 p-4">
+<p class="text-text-light-secondary dark:text-text-dark-secondary text-sm font-normal leading-normal">Tech Today - 5 hours ago</p>
+<p class="text-text-light-primary dark:text-text-dark-primary text-lg font-bold leading-tight tracking-[-0.015em]">The Future of Artificial Intelligence in Daily Life</p>
+<p class="text-text-light-secondary dark:text-text-dark-secondary text-base font-normal leading-normal">Experts discuss how AI is set to revolutionize homes, workplaces, and cities.</p>
+<div class="flex items-center justify-between gap-3 pt-2">
+<div class="inline-flex h-7 shrink-0 items-center justify-center gap-x-2 rounded-full bg-surface-light dark:bg-surface-dark px-3">
+<p class="text-text-light-primary dark:text-text-dark-primary text-xs font-medium leading-normal">Intermediate</p>
+</div>
+<button class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-primary text-white text-sm font-bold leading-normal">
+<span class="truncate">Read Article</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<div class="w-full @container bg-white dark:bg-surface-dark/40 rounded-xl overflow-hidden shadow-sm">
+<div class="flex flex-col items-stretch justify-start">
+<div class="w-full bg-center bg-no-repeat aspect-video bg-cover" data-alt="Ancient ruins under a clear blue sky" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuCOoMG6YnR5z5VU3OiY08DCqljc-LcTAT6m1MNMHhsMStF2j0bl6NTYz_Mnbugbe3aUDtdL6AKBI2WZ0ZnID_lX6oyyFxK5K2riO-oZXMvX6-QpfUGsHgz9WYTN5h4jljJLBqQhRAV7IH9qmKWWCO4x-9l7Iqs97oq3DIsLRTwzmi9_f5ym7ybutvrPWT8w8gKOWizVWRQElFxZkaV7YiBLx7nh2hFOu65rta5SiWnKNF8XGhzh1M0nrCpctGIQdALOsWmFgRPb1A");'></div>
+<div class="flex w-full grow flex-col items-stretch justify-center gap-2 p-4">
+<p class="text-text-light-secondary dark:text-text-dark-secondary text-sm font-normal leading-normal">National Geographic - 1 day ago</p>
+<p class="text-text-light-primary dark:text-text-dark-primary text-lg font-bold leading-tight tracking-[-0.015em]">Lost City Unearthed in the Amazon Rainforest</p>
+<p class="text-text-light-secondary dark:text-text-dark-secondary text-base font-normal leading-normal">Archaeologists uncover a vast network of ancient settlements hidden for centuries.</p>
+<div class="flex items-center justify-between gap-3 pt-2">
+<div class="inline-flex h-7 shrink-0 items-center justify-center gap-x-2 rounded-full bg-surface-light dark:bg-surface-dark px-3">
+<p class="text-text-light-primary dark:text-text-dark-primary text-xs font-medium leading-normal">Advanced</p>
+</div>
+<button class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-primary text-white text-sm font-bold leading-normal">
+<span class="truncate">Read Article</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="fixed bottom-0 left-0 right-0 h-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-lg border-t border-surface-light dark:border-surface-dark">
+<div class="flex h-full items-center justify-around">
+<button class="flex flex-col items-center justify-center gap-1 text-primary">
+<span class="material-symbols-outlined">description</span>
+<p class="text-xs font-medium">Articles</p>
+</button>
+<button class="flex flex-col items-center justify-center gap-1 text-text-light-secondary dark:text-text-dark-secondary">
+<span class="material-symbols-outlined">bookmark</span>
+<p class="text-xs font-medium">Saved</p>
+</button>
+<button class="flex flex-col items-center justify-center gap-1 text-text-light-secondary dark:text-text-dark-secondary">
+<span class="material-symbols-outlined">person</span>
+<p class="text-xs font-medium">Profile</p>
+</button>
+</div>
+</div>
+</div>
+
+</body></html>

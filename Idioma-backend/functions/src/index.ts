@@ -59,10 +59,23 @@ dotenv.config({path: path.join(__dirname, "../.env"), debug: true});
 const newsAPIKey = process.env.NEWS_API_KEY;
 logger.info("Loaded NEWS_API_KEY:", newsAPIKey ? "[SET]" : "[NOT SET]");
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Initialize OpenAI client lazily to avoid errors during local analysis
+let openai: OpenAI | null = null;
+/**
+ * Get or initialize the OpenAI client.
+ * @return {OpenAI} The OpenAI client instance.
+ */
+function getOpenAI(): OpenAI {
+  if (!openai) {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OPENAI_API_KEY is not set");
+    }
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return openai;
+}
 logger.info("Loaded OPENAI_API_KEY:", process.env.OPENAI_API_KEY ? "[SET]" : "[NOT SET]");
 
 const db = admin.firestore();
@@ -87,6 +100,40 @@ exports.hello = onRequest((req, res) => {
 });
 
 
+// ---------------------------------------------------------------------------
+// Category mapping from Idioma app taxonomy to NewsData provider categories
+// ---------------------------------------------------------------------------
+interface CategoryMapping {
+  newsDataCategory: string;
+  isLossy: boolean;
+  keywords?: string; // Boolean query for keyword-augmented (lossy) categories
+}
+
+const CATEGORY_MAP: Record<number, CategoryMapping> = {
+  1: {newsDataCategory: "politics", isLossy: false},
+  2: {newsDataCategory: "business", isLossy: false},
+  3: {newsDataCategory: "entertainment", isLossy: false},
+  4: {newsDataCategory: "sports", isLossy: false},
+  5: {newsDataCategory: "business", isLossy: false},
+  6: {newsDataCategory: "technology", isLossy: false},
+  7: {newsDataCategory: "education", isLossy: false},
+  8: {newsDataCategory: "crime", isLossy: false},
+  9: {newsDataCategory: "other", isLossy: true,
+    keywords: "religion OR church OR mosque OR temple OR faith OR archaeology OR historical OR history OR heritage"},
+  10: {newsDataCategory: "environment", isLossy: false},
+  11: {newsDataCategory: "health", isLossy: false},
+  12: {newsDataCategory: "domestic", isLossy: true,
+    keywords: "housing OR poverty OR inequality OR protest OR " +
+      "migration OR homelessness OR welfare OR discrimination"},
+  13: {newsDataCategory: "lifestyle", isLossy: false},
+  14: {newsDataCategory: "breaking", isLossy: true,
+    keywords: "weather OR storm OR hurricane OR flood OR wildfire OR earthquake OR heatwave OR forecast OR disaster"},
+};
+
+const VALID_CATEGORY_IDS = Object.keys(CATEGORY_MAP).map(Number);
+const MAX_CATEGORIES = 5;
+
+
 export const getNews = onRequest(async (request, response) => {
   // --- Require Firebase Auth ---
   // const decodedToken = await verifyFirebaseIdToken(request);
@@ -98,13 +145,14 @@ export const getNews = onRequest(async (request, response) => {
   logger.info("Fetching news with parameters:", {
     country: request.query.country,
     language: request.query.language,
+    categories: request.query.categories,
   });
-  logger.info("Loaded NEWS_API_KEY:", newsAPIKey ? "[SET]" : "[NOT SET]");
 
   try {
     // Get country and language from query parameters
     const country = request.query.country as string;
     const language = request.query.language as string;
+    const categoriesParam = request.query.categories as string | undefined;
 
     if (!country || !language) {
       response.status(400).json({
@@ -120,51 +168,162 @@ export const getNews = onRequest(async (request, response) => {
       return;
     }
 
+    // Parse and validate categories
+    let categoryIds: number[] = [];
+    if (categoriesParam) {
+      categoryIds = categoriesParam.split(",").map((s) => parseInt(s.trim(), 10));
+      const invalid = categoryIds.filter((id) => !VALID_CATEGORY_IDS.includes(id));
+      if (invalid.length > 0) {
+        response.status(400).json({
+          error: `Invalid category ids: ${invalid.join(", ")}. Valid range: 1-14`,
+        });
+        return;
+      }
+      if (categoryIds.length > MAX_CATEGORIES) {
+        response.status(400).json({
+          error: `Maximum ${MAX_CATEGORIES} categories allowed`,
+        });
+        return;
+      }
+    }
+
+    // Build a deterministic cache key that includes categories
+    const categoriesKey = categoryIds.length > 0 ? categoryIds.sort((a, b) => a - b).join(",") : "all";
+
     // Check Firestore for cached articles (within last 24 hours)
     const twentyFourHoursAgo = Timestamp.fromDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
-    const cachedQuery = db.collection("articles")
-      .where("country", "==", country)
-      .where("language", "==", language)
-      .where("timestamp", ">", twentyFourHoursAgo)
-      .orderBy("timestamp", "desc")
-      .limit(1);
+
+    // Use different query depending on whether categories are specified
+    // This keeps backward compatibility with old documents that lack categoriesKey
+    let cachedQuery;
+    if (categoryIds.length > 0) {
+      cachedQuery = db.collection("articles")
+        .where("country", "==", country)
+        .where("language", "==", language)
+        .where("categoriesKey", "==", categoriesKey)
+        .where("timestamp", ">", twentyFourHoursAgo)
+        .orderBy("timestamp", "desc")
+        .limit(1);
+    } else {
+      cachedQuery = db.collection("articles")
+        .where("country", "==", country)
+        .where("language", "==", language)
+        .where("timestamp", ">", twentyFourHoursAgo)
+        .orderBy("timestamp", "desc")
+        .limit(1);
+    }
     const cachedSnapshot = await cachedQuery.get();
 
     if (!cachedSnapshot.empty) {
       const cachedDoc = cachedSnapshot.docs[0];
-      logger.info(`Returning cached news for country: ${country}, language: ${language}`);
+      logger.info("Returning cached news", {country, language, categoriesKey});
       response.json({results: cachedDoc.data().articles});
       return;
     }
 
-    // No cache found: Fetch from NewsAPI
-    const apiResponse = await axios.get("https://newsdata.io/api/1/news", {
-      params: {
-        apikey: newsAPIKey,
-        // ...existing code...
-        country: country,
-        language: language,
-      },
-    });
+    // -----------------------------------------------------------------
+    // Hybrid fetch: separate strong-mapping and lossy categories
+    // -----------------------------------------------------------------
+    let allArticles: any[] = [];
+
+    if (categoryIds.length === 0) {
+      // No categories selected → fetch general news (backwards compatible)
+      const apiResponse = await axios.get("https://newsdata.io/api/1/news", {
+        params: {apikey: newsAPIKey, country, language},
+      });
+      allArticles = (apiResponse.data.results || []).map((a: any) => ({...a, idiomaCategoryIds: []}));
+    } else {
+      // Split into strong-mapping vs lossy categories
+      const strongIds = categoryIds.filter((id) => !CATEGORY_MAP[id].isLossy);
+      const lossyIds = categoryIds.filter((id) => CATEGORY_MAP[id].isLossy);
+
+      // 1. Fetch strong-mapping categories in a single combined query
+      if (strongIds.length > 0) {
+        const newsDataCats = [...new Set(strongIds.map((id) => CATEGORY_MAP[id].newsDataCategory))];
+        logger.info("Fetching strong-mapping categories", {strongIds, newsDataCats});
+
+        const apiResponse = await axios.get("https://newsdata.io/api/1/news", {
+          params: {
+            apikey: newsAPIKey,
+            country,
+            language,
+            category: newsDataCats.join(","),
+          },
+        });
+
+        const strongArticles = (apiResponse.data.results || []).map((a: any) => {
+          // Annotate with the matching Idioma category ids
+          const matchedIds = strongIds.filter((id) => {
+            const mapped = CATEGORY_MAP[id].newsDataCategory;
+            return a.category && a.category.includes(mapped);
+          });
+          return {...a, idiomaCategoryIds: matchedIds.length > 0 ? matchedIds : strongIds};
+        });
+        allArticles.push(...strongArticles);
+      }
+
+      // 2. Fetch each lossy category separately with keyword augmentation
+      for (const lossyId of lossyIds) {
+        const mapping = CATEGORY_MAP[lossyId];
+        logger.info("Fetching lossy category with keywords", {
+          lossyId, newsDataCategory: mapping.newsDataCategory, keywords: mapping.keywords,
+        });
+
+        try {
+          const apiResponse = await axios.get("https://newsdata.io/api/1/news", {
+            params: {
+              apikey: newsAPIKey,
+              country,
+              language,
+              category: mapping.newsDataCategory,
+              q: mapping.keywords,
+            },
+          });
+
+          const lossyArticles = (apiResponse.data.results || []).map((a: any) => ({
+            ...a,
+            idiomaCategoryIds: [lossyId],
+          }));
+          allArticles.push(...lossyArticles);
+        } catch (err) {
+          logger.warn("Lossy category fetch failed, skipping", {
+            lossyId, error: err instanceof Error ? err.message : err,
+          });
+        }
+      }
+
+      // 3. Deduplicate by article_id
+      const seen = new Set<string>();
+      allArticles = allArticles.filter((a) => {
+        if (!a.article_id || seen.has(a.article_id)) return false;
+        seen.add(a.article_id);
+        return true;
+      });
+
+      // 4. Round-robin interleave for categorical balance
+      if (lossyIds.length > 0 && strongIds.length > 0) {
+        allArticles = balanceFeed(allArticles, categoryIds);
+      }
+    }
 
     // Store in Firestore
     const docData = {
       country,
       language,
+      categoriesKey,
       timestamp: Timestamp.now(),
-      articles: apiResponse.data.results || [],
-      nextPage: apiResponse.data.nextPage,
+      articles: allArticles,
     };
     const bytes = Buffer.byteLength(JSON.stringify(docData), "utf8");
     logger.info("Firestore document size (articles)", {
       bytes,
       kb: (bytes / 1024).toFixed(2),
-      articlesCount: docData.articles.length,
+      articlesCount: allArticles.length,
     });
     await db.collection("articles").add(docData);
 
-    logger.info(`Fetched and cached new news for country: ${country}, language: ${language}`);
-    response.json(apiResponse.data);
+    logger.info("Fetched and cached new news", {country, language, categoriesKey, count: allArticles.length});
+    response.json({results: allArticles});
   } catch (error) {
     logger.error("Error in getNews:", error);
     response.status(500).json({
@@ -174,9 +333,54 @@ export const getNews = onRequest(async (request, response) => {
   }
 });
 
+/**
+ * Round-robin interleave articles by their idiomaCategoryIds to avoid
+ * one category dominating the feed. Uses the first category id per article
+ * as the bucket key.
+ * @param {any[]} articles - The articles to interleave.
+ * @param {number[]} categoryIds - The selected category ids.
+ * @return {any[]} Balanced article list.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any,require-jsdoc
+function balanceFeed(articles: any[], categoryIds: number[]): any[] {
+  const buckets: Record<number, any[]> = {};
+  for (const id of categoryIds) {
+    buckets[id] = [];
+  }
+  for (const a of articles) {
+    const primary = (a.idiomaCategoryIds && a.idiomaCategoryIds.length > 0) ?
+      a.idiomaCategoryIds[0] :
+      categoryIds[0];
+    if (buckets[primary]) {
+      buckets[primary].push(a);
+    } else {
+      buckets[categoryIds[0]].push(a);
+    }
+  }
+
+  const result: any[] = [];
+  const keys = categoryIds.filter((id) => buckets[id] && buckets[id].length > 0);
+  const indices: Record<number, number> = {};
+  for (const k of keys) indices[k] = 0;
+
+  let remaining = articles.length;
+  while (remaining > 0) {
+    for (const k of keys) {
+      if (indices[k] < buckets[k].length) {
+        result.push(buckets[k][indices[k]]);
+        indices[k]++;
+        remaining--;
+      }
+    }
+    // Break if no progress was made (all buckets exhausted)
+    if (keys.every((k) => indices[k] >= buckets[k].length)) break;
+  }
+  return result;
+}
+
 // Function to extract and simplify article content from a URL
 // Uses jsdom + @mozilla/readability to parse main content and collect images
-export const extractArticle = onRequest(async (request, response) => {
+export const extractArticle = onRequest({timeoutSeconds: 300}, async (request, response) => {
   const url = (request.query.url as string) || (request.body && (request.body.url as string));
   logger.info("extractArticle called", {url});
 
@@ -212,12 +416,12 @@ export const extractArticle = onRequest(async (request, response) => {
     logger.info("Fetching article HTML", {url});
 
     const fetchWithRetry = async (retries = 2):
-      Promise<{data: string; status: number; headers: Record<string, string>}> => {
+      Promise<{data: Buffer; status: number; headers: Record<string, string>}> => {
       for (let attempt = 1; attempt <= retries + 1; attempt++) {
         try {
           logger.info(`Fetch attempt ${attempt}`, {url});
           return await axios.get(url, {
-            responseType: "text",
+            responseType: "arraybuffer",
             headers: {
               "User-Agent":
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
@@ -248,19 +452,17 @@ export const extractArticle = onRequest(async (request, response) => {
       throw new Error("Fetch failed after all retries");
     };
 
-    const {data: html, status, headers} = await fetchWithRetry();
+    const {data: htmlBuffer, headers: respHeaders} = await fetchWithRetry();
 
-    logger.info("HTML fetch successful", {
-      url,
-      status,
-      contentType: headers["content-type"],
-      htmlLength: html.length,
-      hasBody: html.includes("<body"),
-      hasScript: html.includes("<script"),
-    });
+    // 3) Build DOM with proper encoding detection from Content-Type + HTML meta tags
+    logger.info("Parsing HTML with Readability", {url});
+    const contentType = respHeaders["content-type"] || "text/html";
+    const dom = new JSDOM(htmlBuffer, {url, contentType});
+    const doc = dom.window.document;
 
     // Check if we got a redirect or error page
-    if (html.includes("Access Denied") || html.includes("403 Forbidden") || html.includes("Cloudflare")) {
+    const bodyText = doc.body?.textContent || "";
+    if (bodyText.includes("Access Denied") || bodyText.includes("403 Forbidden") || bodyText.includes("Cloudflare")) {
       logger.warn("Possible bot detection", {url});
       response.status(403).json({
         error: "Access denied - site may be blocking automated requests",
@@ -268,20 +470,6 @@ export const extractArticle = onRequest(async (request, response) => {
       });
       return;
     }
-
-    // 3) Build DOM and extract main content via Readability
-    logger.info("Parsing HTML with Readability", {url});
-    const dom = new JSDOM(html, {url});
-    const doc = dom.window.document;
-
-    // Log some basic info about the parsed document
-    logger.info("Document parsed", {
-      url,
-      title: doc.title,
-      bodyLength: doc.body?.innerHTML?.length || 0,
-      paragraphs: doc.querySelectorAll("p").length,
-      images: doc.querySelectorAll("img").length,
-    });
 
     const reader = new Readability(doc);
     const article = reader.parse();
@@ -300,12 +488,7 @@ export const extractArticle = onRequest(async (request, response) => {
       return;
     }
 
-    logger.info("Article parsed successfully", {
-      url,
-      title: article.title,
-      contentLength: article.textContent?.length || 0,
-      excerpt: article.excerpt,
-    });
+    logger.info("Article parsed successfully", {url, title: article.title});
 
     // 4) Normalize images and preserve positions in cleaned HTML
     const toAbsolute = (src: string): string => {
@@ -405,7 +588,10 @@ export const extractArticle = onRequest(async (request, response) => {
       titleLength: (payload.title || "").length,
       textLength: (payload.textContent || "").length,
     });
-    await db.collection("articleContent").add(payload);
+    // Fire-and-forget: cache without blocking the response
+    db.collection("articleContent").add(payload)
+      .then(() => logger.info("Article content cached successfully", {url}))
+      .catch((error) => logger.error("Failed to cache article content", {error, url}));
 
     logger.info("Parsed and cached article content", {url, title: payload.title});
     response.json(payload);
@@ -439,15 +625,26 @@ export const extractArticle = onRequest(async (request, response) => {
 });
 
 // Function to simplify article content using OpenAI for different CEFR levels
-export const simplifyArticle = onRequest(async (request, response) => {
-  const {url, level = "B1", stream = "false"} = request.query as { url?: string; level?: string; stream?: string };
-  const {url: bodyUrl, level: bodyLevel, stream: bodyStream} = request.body || {};
+export const simplifyArticle = onRequest({timeoutSeconds: 300}, async (request, response) => {
+  const {url, level = "B1", stream = "false", language = ""} = request.query as {
+    url?: string;
+    level?: string;
+    stream?: string;
+    language?: string;
+  };
+  const {url: bodyUrl, level: bodyLevel, stream: bodyStream, language: bodyLanguage} = request.body || {};
 
   const articleUrl = url || bodyUrl;
   const cefrLevel = level || bodyLevel || "B1";
   const enableStream = (stream || bodyStream || "false").toLowerCase() === "true";
+  const targetLanguage = language || bodyLanguage || "";
 
-  logger.info("simplifyArticle called", {url: articleUrl, level: cefrLevel, stream: enableStream});
+  logger.info("simplifyArticle called", {
+    url: articleUrl,
+    level: cefrLevel,
+    stream: enableStream,
+    language: targetLanguage,
+  });
 
   if (!articleUrl) {
     response.status(400).json({error: "Missing 'url' parameter"});
@@ -460,20 +657,38 @@ export const simplifyArticle = onRequest(async (request, response) => {
   }
 
   try {
-    // 1) Check cache for this URL + level combination (24 hour cache)
+    // 1) Check cache for this URL + level + language combination (24 hour cache)
     const twentyFourHoursAgo = Timestamp.fromDate(new Date(Date.now() - 24 * 60 * 60 * 1000));
-    const cacheQuery = db
-      .collection("simplifiedArticles")
-      .where("originalUrl", "==", articleUrl)
-      .where("cefrLevel", "==", cefrLevel)
-      .where("timestamp", ">", twentyFourHoursAgo)
-      .orderBy("timestamp", "desc")
-      .limit(1);
 
-    const cached = await cacheQuery.get();
+    // Build cache query - include language to ensure we return content in the right language
+    let cached;
+    try {
+      const cacheQuery = db
+        .collection("simplifiedArticles")
+        .where("originalUrl", "==", articleUrl)
+        .where("cefrLevel", "==", cefrLevel)
+        .where("language", "==", targetLanguage || "")
+        .where("outputFormat", "==", "markdown")
+        .where("timestamp", ">", twentyFourHoursAgo)
+        .orderBy("timestamp", "desc")
+        .limit(1);
+
+      cached = await cacheQuery.get();
+    } catch (cacheError) {
+      // Index might not be ready yet, skip cache and regenerate
+      logger.warn("Cache query failed (index may be building), regenerating", {
+        error: cacheError instanceof Error ? cacheError.message : cacheError,
+      });
+      cached = {empty: true, docs: []};
+    }
+
     if (!cached.empty) {
       const data = cached.docs[0].data();
-      logger.info("Returning cached simplified article", {url: articleUrl, level: cefrLevel});
+      logger.info("Returning cached simplified article", {
+        url: articleUrl,
+        level: cefrLevel,
+        language: targetLanguage,
+      });
       response.json(data);
       return;
     }
@@ -502,19 +717,44 @@ export const simplifyArticle = onRequest(async (request, response) => {
     });
 
     // 3) Prepare the simplification prompt
-    const systemPrompt = `Simplify this news article for CEFR ${cefrLevel} level learners. ` +
-      `Preserve all <img> tags exactly.
+    // Determine the language instruction - be VERY explicit to prevent translation
+    const languageInstruction = targetLanguage ?
+      `CRITICAL LANGUAGE REQUIREMENT: The output MUST be written entirely in ${targetLanguage}. ` +
+      "DO NOT translate to English under any circumstances. " +
+      `Keep ALL text, including simplified vocabulary, in ${targetLanguage}.` :
+      "CRITICAL LANGUAGE REQUIREMENT: Keep the article in its ORIGINAL language. " +
+      "DO NOT translate to English. If the original is in Spanish, output Spanish. " +
+      "If the original is in French, output French. Preserve the original language throughout.";
 
-    ${cefrLevel} guidelines:
-    ${cefrLevel === "A2" ? "- Simple present/past tense, 10-15 word sentences, basic vocabulary" : ""}
-    ${cefrLevel === "B1" ? "- Mix simple/compound sentences, common vocabulary, clear structure" : ""}
-    ${cefrLevel === "B2" ? "- Varied sentences, sophisticated vocabulary, detailed explanations" : ""}
-    ${cefrLevel === "C1" ? "- Complex structures, advanced vocabulary, nuanced explanations" : ""}
+    const systemPrompt = `You are a language learning assistant that simplifies news articles for language learners.
 
-    Return only simplified HTML, no explanations.`;
+${languageInstruction}
 
-    const userPrompt = `Please simplify this article for ${cefrLevel} level learners. ` +
-      `Preserve all <img> tags exactly:\n\n    ${originalArticle.llmHtml}`;
+FORMATTING RULES (strict):
+- Use ONLY these Markdown features: ## for section headings, **bold** for key terms, and blank lines between paragraphs.
+- Do NOT use: bullet lists, numbered lists, links, images, blockquotes, code blocks, horizontal rules, or any HTML tags.
+- Separate paragraphs with a single blank line.
+- Use ## headings to organize the article into 2-4 sections.
+- Use **bold** sparingly to highlight important vocabulary or key terms (2-5 per section).
+
+CONTENT RULES:
+1. Output language: ${targetLanguage || "SAME AS INPUT"} — NEVER translate to English unless the original is in English.
+2. Simplify vocabulary and sentence structure for CEFR ${cefrLevel} level.
+3. Keep the same meaning and all key information.
+
+${cefrLevel} guidelines:
+${cefrLevel === "A2" ? "- Use simple present/past tense, 10-15 word sentences, basic vocabulary" : ""}
+${cefrLevel === "B1" ? "- Use mix of simple/compound sentences, common vocabulary, clear structure" : ""}
+${cefrLevel === "B2" ? "- Use varied sentences, sophisticated vocabulary, detailed explanations" : ""}
+${cefrLevel === "C1" ? "- Use complex structures, advanced vocabulary, nuanced explanations" : ""}
+
+Return ONLY the simplified article. No preamble, no explanations.`;
+
+    const userPrompt = `Simplify this article for CEFR ${cefrLevel} level learners.\n` +
+      `LANGUAGE: ${targetLanguage || "Keep in original language (DO NOT translate to English)"}\n` +
+      "FORMAT: Only ## headings, **bold** key terms, and paragraphs separated by blank lines. " +
+      "No lists, links, images, or HTML.\n\n" +
+      `Article:\n${originalArticle.llmHtml}`;
 
     // 4) Call OpenAI API with conditional streaming
     logger.info("Calling OpenAI API", {
@@ -537,13 +777,13 @@ export const simplifyArticle = onRequest(async (request, response) => {
       let fullContent = "";
       let tokenCount = 0;
 
-      const stream = await openai.chat.completions.create({
+      const stream = await getOpenAI().chat.completions.create({
         model: "gpt-5-nano",
         messages: [
           {role: "system", content: systemPrompt},
           {role: "user", content: userPrompt},
         ],
-        max_completion_tokens: 3000,
+        max_completion_tokens: 16000,
         stream: true,
       });
 
@@ -573,10 +813,12 @@ export const simplifyArticle = onRequest(async (request, response) => {
       const simplifiedPayload = {
         originalUrl: articleUrl,
         cefrLevel,
+        language: targetLanguage || "",
+        outputFormat: "markdown", // LLM now outputs Markdown instead of HTML
         title: originalArticle.title,
         byline: originalArticle.byline,
         siteName: originalArticle.siteName,
-        simplifiedHtml: fullContent,
+        simplifiedHtml: fullContent, // Field name kept for compatibility; contains Markdown
         leadImageUrl: originalArticle.leadImageUrl,
         images: originalArticle.images,
         timestamp: Timestamp.now(),
@@ -585,25 +827,49 @@ export const simplifyArticle = onRequest(async (request, response) => {
 
       // Cache asynchronously - don't block the response
       db.collection("simplifiedArticles").add(simplifiedPayload)
-        .then(() => logger.info("Streamed result cached successfully", {url: articleUrl, level: cefrLevel}))
+        .then(() => logger.info("Streamed result cached successfully", {
+          url: articleUrl,
+          level: cefrLevel,
+          language: targetLanguage,
+        }))
         .catch((error) => logger.error("Failed to cache streamed result", {error, url: articleUrl}));
     } else {
       // Existing non-streaming logic
-      const completion = await openai.chat.completions.create({
+      const completion = await getOpenAI().chat.completions.create({
         model: "gpt-5-nano",
         messages: [
           {role: "system", content: systemPrompt},
           {role: "user", content: userPrompt},
         ],
-        max_completion_tokens: 3000,
+        max_completion_tokens: 16000,
         stream: false,
+      });
+
+      // Log completion response
+      logger.info("OpenAI completion response", {
+        url: articleUrl,
+        level: cefrLevel,
+        finishReason: completion.choices[0]?.finish_reason,
+        contentLength: completion.choices[0]?.message?.content?.length || 0,
+        tokens: {
+          input: completion.usage?.prompt_tokens || 0,
+          output: completion.usage?.completion_tokens || 0,
+          total: completion.usage?.total_tokens || 0,
+        },
       });
 
       const simplifiedHtml = completion.choices[0]?.message?.content;
 
       if (!simplifiedHtml) {
-        logger.error("OpenAI returned empty response", {url: articleUrl, level: cefrLevel});
-        response.status(500).json({error: "Failed to generate simplified content"});
+        logger.error("OpenAI returned empty response", {
+          url: articleUrl,
+          level: cefrLevel,
+          finishReason: completion.choices[0]?.finish_reason,
+        });
+        response.status(500).json({
+          error: "Failed to generate simplified content",
+          details: `OpenAI finish_reason: ${completion.choices[0]?.finish_reason || "unknown"}`,
+        });
         return;
       }
 
@@ -612,17 +878,23 @@ export const simplifyArticle = onRequest(async (request, response) => {
         level: cefrLevel,
         originalLength: originalArticle.llmHtml?.length || 0,
         simplifiedLength: simplifiedHtml.length,
-        tokensUsed: completion.usage?.total_tokens || 0,
+        tokens: {
+          input: completion.usage?.prompt_tokens || 0,
+          output: completion.usage?.completion_tokens || 0,
+          total: completion.usage?.total_tokens || 0,
+        },
       });
 
       // 5) Build response payload and cache
       const simplifiedPayload = {
         originalUrl: articleUrl,
         cefrLevel,
+        language: targetLanguage || "",
+        outputFormat: "markdown", // LLM now outputs Markdown instead of HTML
         title: originalArticle.title,
         byline: originalArticle.byline,
         siteName: originalArticle.siteName,
-        simplifiedHtml,
+        simplifiedHtml, // Field name kept for compatibility; contains Markdown
         leadImageUrl: originalArticle.leadImageUrl,
         images: originalArticle.images,
         timestamp: Timestamp.now(),
@@ -637,7 +909,14 @@ export const simplifyArticle = onRequest(async (request, response) => {
         imagesCount: originalArticle.images?.length || 0,
       });
 
-      await db.collection("simplifiedArticles").add(simplifiedPayload);
+      // Fire-and-forget: cache without blocking the response
+      db.collection("simplifiedArticles").add(simplifiedPayload)
+        .then(() => logger.info("Simplified article cached successfully", {
+          url: articleUrl,
+          level: cefrLevel,
+          language: targetLanguage,
+        }))
+        .catch((error) => logger.error("Failed to cache simplified article", {error, url: articleUrl}));
 
       logger.info("Simplified article cached", {
         url: articleUrl,

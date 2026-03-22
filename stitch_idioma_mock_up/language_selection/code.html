@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Language Selection Screen</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary": "#F472B6",
+              "background-light": "#FFF7F9",
+              "background-dark": "#1F1116",
+              "primary-light": "#F9A8D4",
+              "primary-dark": "#BE185D",
+              "text-light": "#111813",
+              "text-dark": "#FFFFFF",
+              "subtle-light": "#A18890",
+              "subtle-dark": "#9CA3AF"
+            },
+            fontFamily: {
+              "display": ["Work Sans", "sans-serif"]
+            },
+            borderRadius: {"DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark font-display text-text-light dark:text-text-dark">
+<div class="relative flex h-auto min-h-screen w-full flex-col group/design-root overflow-x-hidden">
+<div class="flex items-center bg-background-light dark:bg-background-dark p-4 pb-2 justify-between sticky top-0 z-10">
+<div class="text-text-light dark:text-text-dark flex size-12 shrink-0 items-center justify-center">
+<span class="material-symbols-outlined text-2xl">arrow_back</span>
+</div>
+<h2 class="text-text-light dark:text-text-dark text-lg font-bold leading-tight tracking-[-0.015em] flex-1 text-center pr-12">What language do you want to learn?</h2>
+</div>
+<div class="px-4 py-3 sticky top-[72px] bg-background-light dark:bg-background-dark z-10">
+<label class="flex flex-col min-w-40 h-12 w-full">
+<div class="flex w-full flex-1 items-stretch rounded-xl h-full">
+<div class="text-subtle-light dark:text-subtle-dark flex border-none bg-white dark:bg-gray-800 items-center justify-center pl-4 rounded-l-xl border-r-0">
+<span class="material-symbols-outlined text-2xl">search</span>
+</div>
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-xl text-text-light dark:text-text-dark focus:outline-0 focus:ring-0 border-none bg-white dark:bg-gray-800 focus:border-none h-full placeholder:text-subtle-light dark:placeholder:text-subtle-dark px-4 rounded-l-none border-l-0 pl-2 text-base font-normal leading-normal" placeholder="Search for a language..." value=""/>
+</div>
+</label>
+</div>
+<div class="flex gap-3 px-4 py-2 overflow-x-auto">
+<div class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-full bg-primary/20 text-primary-dark dark:bg-primary/30 dark:text-primary-light pl-4 pr-4 cursor-pointer">
+<p class="text-primary-dark dark:text-white text-sm font-medium leading-normal">Popular</p>
+</div>
+<div class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-gray-800 pl-4 pr-4 cursor-pointer">
+<p class="text-text-light dark:text-text-dark text-sm font-medium leading-normal">Europe</p>
+</div>
+<div class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-gray-800 pl-4 pr-4 cursor-pointer">
+<p class="text-text-light dark:text-text-dark text-sm font-medium leading-normal">Asia</p>
+</div>
+<div class="flex h-8 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-gray-800 pl-4 pr-4 cursor-pointer">
+<p class="text-text-light dark:text-text-dark text-sm font-medium leading-normal">All</p>
+</div>
+</div>
+<div class="flex flex-col gap-2 p-4 pb-32">
+<div class="flex items-center gap-4 bg-white dark:bg-gray-800 p-2 min-h-[72px] justify-between rounded-lg has-[:checked]:bg-primary/20 dark:has-[:checked]:bg-primary/30">
+<div class="flex items-center gap-4">
+<img class="rounded-full size-12 object-cover" data-alt="Flag of Spain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC3s3bCPXhKcQlBH5yQQPZQJ4gNXJDJWt8ep7-Dj9QhzH8o0Ngh8Jn-Jn4GpXVYojHthSZJU37NecO-XIQnaVb5rO5VjQx4z_bV52FVV-yfUNoqUdaqTe0-EA0p40SfxQ0Pu7ISeJRRX8M71Fw8UmlRYxxNOYlyPVRwZWMMtHNW_vdIFkKL_7ik6VwO5Touk8ZZP8i_bBpHd1CipkuDwW-Wa8efVrpXgaKyCUAEORGzKWtX_DLIn5ADzDOOLgKgCmb3V0UQhb5TYg"/>
+<div class="flex flex-col justify-center">
+<p class="text-text-light dark:text-text-dark text-base font-medium leading-normal line-clamp-1">Spanish</p>
+<p class="text-subtle-light dark:text-subtle-dark text-sm font-normal leading-normal line-clamp-2">Español</p>
+</div>
+</div>
+<div class="shrink-0 pr-2">
+<label class="relative flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border-2 border-gray-300 dark:border-gray-600 bg-transparent has-[:checked]:border-primary has-[:checked]:bg-primary">
+<span class="material-symbols-outlined text-base text-white opacity-0 transition-opacity checked:opacity-100">check</span>
+<input class="invisible absolute" name="language" type="radio"/>
+</label>
+</div>
+</div>
+<div class="flex items-center gap-4 bg-white dark:bg-gray-800 p-2 min-h-[72px] justify-between rounded-lg has-[:checked]:bg-primary/20 dark:has-[:checked]:bg-primary/30">
+<div class="flex items-center gap-4">
+<img class="rounded-full size-12 object-cover" data-alt="Flag of France" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBy8CXzSguF0V202Mji1WlUMQrfMW5ar5RFrnbJxIKOnB3KD-CKoT4gmk4fl_QpLgqyrchBLZ7S4UAPi7vS68gMO-CwyYIBpO3qEEY6Lwfdma4rbM2bW60D63RRc2cl7F5w8WEjkSy52s4yFl-HpoUf607eJQkCkY-ZYinmB0HhdIJhrcrHcX_550iaYtSGEiDt_1kK7MjwhQuuFbKlx5UBX9hjs0JX0KlyxfU9yHmNvn0O-rAM96-IZfR8p6rOdOhDr5l51BYuUQ"/>
+<div class="flex flex-col justify-center">
+<p class="text-text-light dark:text-text-dark text-base font-medium leading-normal line-clamp-1">French</p>
+<p class="text-subtle-light dark:text-subtle-dark text-sm font-normal leading-normal line-clamp-2">Français</p>
+</div>
+</div>
+<div class="shrink-0 pr-2">
+<label class="relative flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border-2 border-gray-300 dark:border-gray-600 bg-transparent has-[:checked]:border-primary has-[:checked]:bg-primary">
+<span class="material-symbols-outlined text-base text-white opacity-0 transition-opacity checked:opacity-100">check</span>
+<input checked="" class="invisible absolute" name="language" type="radio"/>
+</label>
+</div>
+</div>
+<div class="flex items-center gap-4 bg-white dark:bg-gray-800 p-2 min-h-[72px] justify-between rounded-lg has-[:checked]:bg-primary/20 dark:has-[:checked]:bg-primary/30">
+<div class="flex items-center gap-4">
+<img class="rounded-full size-12 object-cover" data-alt="Flag of Germany" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCnIdpKCAFGPBbgPi7Q6IpYR4osL6aTQAUZfJ_6OdYX90uxdzAlpjqV89M-PXK-yGijTCDcYFP4LnvfCNd9RHhKaSu6Ts44AUu2yOV0mxOLkd4y0k_mqA2vEHel57jhqQk9lu373bwyNOGN-f2OaUqwn_LPEhsikjTFrx38raaIAJexC3bqYsnYPyYCaIPZANHyjGJz3JF0dyX3pe28nv1aiwlobMMFtliK0Q_8Dayzt2OxOvL44t-3_MrPMr5GyrOW0jYPQFrw7g"/>
+<div class="flex flex-col justify-center">
+<p class="text-text-light dark:text-text-dark text-base font-medium leading-normal line-clamp-1">German</p>
+<p class="text-subtle-light dark:text-subtle-dark text-sm font-normal leading-normal line-clamp-2">Deutsch</p>
+</div>
+</div>
+<div class="shrink-0 pr-2">
+<label class="relative flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border-2 border-gray-300 dark:border-gray-600 bg-transparent has-[:checked]:border-primary has-[:checked]:bg-primary">
+<span class="material-symbols-outlined text-base text-white opacity-0 transition-opacity checked:opacity-100">check</span>
+<input class="invisible absolute" name="language" type="radio"/>
+</label>
+</div>
+</div>
+<div class="flex items-center gap-4 bg-white dark:bg-gray-800 p-2 min-h-[72px] justify-between rounded-lg has-[:checked]:bg-primary/20 dark:has-[:checked]:bg-primary/30">
+<div class="flex items-center gap-4">
+<img class="rounded-full size-12 object-cover" data-alt="Flag of Japan" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCfLp8jWFLzACAOq7J0EcK9GpBKpa651w8WOx_rvS_H8rexCOW5syCfgUr5n2vVsL3NZzdnE6vWAuXsuOaVTFH2LlALHrq_6NNb6hCJgajq4wmqSTlQgRlRsLqpv1_AO-BfKogavh3XUUoicBEQ-WbotIdXiSEXvXtu_XTqwwEU03R2cIYW-XA8pePr5_-8PSp59oF3cxsGdsHMbIZwbRBqGYdsg7MpFg_MROGutYXXanqezaPkyf50-l5ORu0awGz9nCPKAoLuSg"/>
+<div class="flex flex-col justify-center">
+<p class="text-text-light dark:text-text-dark text-base font-medium leading-normal line-clamp-1">Japanese</p>
+<p class="text-subtle-light dark:text-subtle-dark text-sm font-normal leading-normal line-clamp-2">日本語</p>
+</div>
+</div>
+<div class="shrink-0 pr-2">
+<label class="relative flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border-2 border-gray-300 dark:border-gray-600 bg-transparent has-[:checked]:border-primary has-[:checked]:bg-primary">
+<span class="material-symbols-outlined text-base text-white opacity-0 transition-opacity checked:opacity-100">check</span>
+<input class="invisible absolute" name="language" type="radio"/>
+</label>
+</div>
+</div>
+</div>
+<div class="fixed bottom-0 left-0 w-full bg-background-light dark:bg-background-dark p-4 pt-2">
+<button class="flex h-14 w-full items-center justify-center gap-x-2 rounded-full bg-primary px-6 text-base font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">Continue</button>
+</div>
+</div>
+
+</body></html>

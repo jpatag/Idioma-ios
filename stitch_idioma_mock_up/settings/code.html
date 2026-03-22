@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Settings Screen</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
+<script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary": "#EC4899",
+              "background-light": "#FFF7FA",
+              "background-dark": "#1F1118",
+              "content-light": "#ffffff",
+              "content-dark": "#2E1A25",
+              "text-primary-light": "#1E0D16",
+              "text-primary-dark": "#FCE7F3",
+              "text-secondary-light": "#9D2667",
+              "text-secondary-dark": "#F472B6",
+              "icon-bg-light": "#FCE7F3",
+              "icon-bg-dark": "#50253C",
+              "border-light": "#F9A8D4",
+              "border-dark": "#3B2131",
+            },
+            fontFamily: {
+              "display": ["Work Sans", "sans-serif"]
+            },
+            borderRadius: {"DEFAULT": "0.5rem", "lg": "0.75rem", "xl": "1rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        font-size: 24px;
+      }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark font-display text-text-primary-light dark:text-text-primary-dark">
+<div class="relative flex h-auto min-h-screen w-full flex-col group/design-root overflow-x-hidden">
+<div class="sticky top-0 z-10 flex items-center bg-background-light/80 dark:bg-background-dark/80 p-4 pb-2 justify-between backdrop-blur-sm">
+<div class="flex size-12 shrink-0 items-center">
+<span class="material-symbols-outlined">arrow_back</span>
+</div>
+<h1 class="text-xl font-bold leading-tight tracking-tight flex-1 text-center">Settings</h1>
+<div class="flex size-12 shrink-0 items-center"></div>
+</div>
+<div class="flex p-4 @container mt-4">
+<div class="flex w-full flex-col gap-4 items-center">
+<div class="flex gap-4 flex-col items-center">
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full min-h-32 w-32" data-alt="User's profile picture, an abstract pink and white gradient" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBE4QFJzIX83x6IiMCta_VhP-5Vnf8A6aXJ7ZNm1xM_TpKCahlRfhOndvKE3yxMN9FhUkRkw8QjoCcF-N4c9pM2EVa_Yt0Jdq3MhfbiY0xu7DeDxfZaG56esEKkFuEfHTAEWoTLTCDnIcY5CehOVHIiUOkB_Kgmzlq-UMX4kU63gnaVrbuL77KPY7_N0B62l9D6iDWkzflJV5TtglGGEAGd90HePCtluQQj2FTvuwIsTd43Iokk-2_FDeSG_sRrIKdS8H_rm1omog");'></div>
+<div class="flex flex-col items-center justify-center">
+<p class="text-[22px] font-bold leading-tight tracking-[-0.015em] text-center">Alex Chen</p>
+<p class="text-text-secondary-light dark:text-text-secondary-dark text-base font-normal leading-normal text-center">alex.chen@email.com</p>
+</div>
+</div>
+</div>
+</div>
+<div class="flex flex-col gap-8 px-4 py-6">
+<div class="flex flex-col">
+<h2 class="text-text-secondary-light dark:text-text-secondary-dark text-sm font-semibold uppercase tracking-wider px-4 pb-2">Language Preferences</h2>
+<div class="bg-content-light dark:bg-content-dark rounded-xl shadow-sm overflow-hidden border border-border-light/50 dark:border-border-dark">
+<div class="flex items-center gap-4 px-4 min-h-[72px] py-2 justify-between">
+<div class="flex items-center gap-4">
+<div class="flex items-center justify-center rounded-lg bg-icon-bg-light dark:bg-icon-bg-dark shrink-0 size-12">
+<span class="material-symbols-outlined">globe</span>
+</div>
+<div class="flex flex-col justify-center">
+<p class="text-base font-medium leading-normal line-clamp-1">Native Language</p>
+<p class="text-text-secondary-light dark:text-text-secondary-dark text-sm font-normal leading-normal line-clamp-2">English</p>
+</div>
+</div>
+<div class="shrink-0">
+<div class="flex size-7 items-center justify-center">
+<span class="material-symbols-outlined">chevron_right</span>
+</div>
+</div>
+</div>
+<hr class="border-t border-border-light/50 dark:border-border-dark ml-20"/>
+<div class="flex items-center gap-4 px-4 min-h-[72px] py-2 justify-between">
+<div class="flex items-center gap-4">
+<div class="flex items-center justify-center rounded-lg bg-icon-bg-light dark:bg-icon-bg-dark shrink-0 size-12">
+<span class="material-symbols-outlined">translate</span>
+</div>
+<div class="flex flex-col justify-center">
+<p class="text-base font-medium leading-normal line-clamp-1">Target Language</p>
+<p class="text-text-secondary-light dark:text-text-secondary-dark text-sm font-normal leading-normal line-clamp-2">Spanish</p>
+</div>
+</div>
+<div class="shrink-0">
+<div class="flex size-7 items-center justify-center">
+<span class="material-symbols-outlined">chevron_right</span>
+</div>
+</div>
+</div>
+<hr class="border-t border-border-light/50 dark:border-border-dark ml-20"/>
+<div class="flex items-center gap-4 px-4 min-h-[72px] py-2 justify-between">
+<div class="flex items-center gap-4">
+<div class="flex items-center justify-center rounded-lg bg-icon-bg-light dark:bg-icon-bg-dark shrink-0 size-12">
+<span class="material-symbols-outlined">signal_cellular_alt</span>
+</div>
+<div class="flex flex-col justify-center">
+<p class="text-base font-medium leading-normal line-clamp-1">Difficulty Level</p>
+<p class="text-text-secondary-light dark:text-text-secondary-dark text-sm font-normal leading-normal line-clamp-2">Intermediate</p>
+</div>
+</div>
+<div class="shrink-0">
+<div class="flex size-7 items-center justify-center">
+<span class="material-symbols-outlined">chevron_right</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="flex flex-col">
+<h2 class="text-text-secondary-light dark:text-text-secondary-dark text-sm font-semibold uppercase tracking-wider px-4 pb-2">Account &amp; App</h2>
+<div class="bg-content-light dark:bg-content-dark rounded-xl shadow-sm overflow-hidden border border-border-light/50 dark:border-border-dark">
+<div class="flex items-center gap-4 px-4 min-h-[72px] py-2 justify-between">
+<div class="flex items-center gap-4">
+<div class="flex items-center justify-center rounded-lg bg-icon-bg-light dark:bg-icon-bg-dark shrink-0 size-12">
+<span class="material-symbols-outlined">person</span>
+</div>
+<div class="flex flex-col justify-center">
+<p class="text-base font-medium leading-normal line-clamp-1">Edit Profile</p>
+</div>
+</div>
+<div class="shrink-0">
+<div class="flex size-7 items-center justify-center">
+<span class="material-symbols-outlined">chevron_right</span>
+</div>
+</div>
+</div>
+<hr class="border-t border-border-light/50 dark:border-border-dark ml-20"/>
+<div class="flex items-center gap-4 px-4 min-h-[72px] py-2 justify-between">
+<div class="flex items-center gap-4">
+<div class="flex items-center justify-center rounded-lg bg-icon-bg-light dark:bg-icon-bg-dark shrink-0 size-12">
+<span class="material-symbols-outlined">workspace_premium</span>
+</div>
+<div class="flex flex-col justify-center">
+<p class="text-base font-medium leading-normal line-clamp-1">Manage Subscription</p>
+</div>
+</div>
+<div class="shrink-0">
+<div class="flex size-7 items-center justify-center">
+<span class="material-symbols-outlined">chevron_right</span>
+</div>
+</div>
+</div>
+<hr class="border-t border-border-light/50 dark:border-border-dark ml-20"/>
+<div class="flex items-center gap-4 px-4 min-h-[72px] py-2 justify-between">
+<div class="flex items-center gap-4">
+<div class="flex items-center justify-center rounded-lg bg-icon-bg-light dark:bg-icon-bg-dark shrink-0 size-12">
+<span class="material-symbols-outlined">notifications</span>
+</div>
+<div class="flex flex-col justify-center">
+<p class="text-base font-medium leading-normal line-clamp-1">Notifications</p>
+</div>
+</div>
+<div class="shrink-0">
+<label class="relative inline-flex cursor-pointer items-center">
+<input checked="" class="peer sr-only" type="checkbox" value=""/>
+<div class="peer h-6 w-11 rounded-full bg-gray-200 after:absolute after:start-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-primary dark:peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:border-white rtl:peer-checked:after:-translate-x-full dark:border-gray-600 dark:bg-gray-700"></div>
+</label>
+</div>
+</div>
+<hr class="border-t border-border-light/50 dark:border-border-dark ml-20"/>
+<div class="flex items-center gap-4 px-4 min-h-[72px] py-2 justify-between">
+<div class="flex items-center gap-4">
+<div class="flex items-center justify-center rounded-lg bg-icon-bg-light dark:bg-icon-bg-dark shrink-0 size-12">
+<span class="material-symbols-outlined">dark_mode</span>
+</div>
+<div class="flex flex-col justify-center">
+<p class="text-base font-medium leading-normal line-clamp-1">Dark Mode</p>
+</div>
+</div>
+<div class="shrink-0">
+<label class="relative inline-flex cursor-pointer items-center">
+<input class="peer sr-only" type="checkbox" value=""/>
+<div class="peer h-6 w-11 rounded-full bg-gray-200 after:absolute after:start-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-primary dark:peer-checked:bg-primary peer-checked:after:translate-x-full peer-checked:after:border-white rtl:peer-checked:after:-translate-x-full dark:border-gray-600 dark:bg-gray-700"></div>
+</label>
+</div>
+</div>
+</div>
+</div>
+<div class="flex flex-col">
+<h2 class="text-text-secondary-light dark:text-text-secondary-dark text-sm font-semibold uppercase tracking-wider px-4 pb-2">Support</h2>
+<div class="bg-content-light dark:bg-content-dark rounded-xl shadow-sm overflow-hidden border border-border-light/50 dark:border-border-dark">
+<div class="flex items-center gap-4 px-4 min-h-[72px] py-2 justify-between">
+<div class="flex items-center gap-4">
+<div class="flex items-center justify-center rounded-lg bg-icon-bg-light dark:bg-icon-bg-dark shrink-0 size-12">
+<span class="material-symbols-outlined">help</span>
+</div>
+<div class="flex flex-col justify-center">
+<p class="text-base font-medium leading-normal line-clamp-1">Help &amp; Support</p>
+</div>
+</div>
+<div class="shrink-0">
+<div class="flex size-7 items-center justify-center">
+<span class="material-symbols-outlined">chevron_right</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="pt-4 pb-8">
+<button class="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3.5 text-base font-medium text-white dark:bg-primary dark:text-white">
+<span class="material-symbols-outlined">logout</span>
+                Log Out
+            </button>
+</div>
+</div>
+</div>
+</body></html>
