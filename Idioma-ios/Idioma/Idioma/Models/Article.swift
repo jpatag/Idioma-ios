@@ -133,6 +133,7 @@ struct ArticleContent: Codable {
     let textContent: String?
     let leadImageUrl: String?
     let images: [String]?
+    let cacheHit: Bool?
 }
 
 // MARK: - Simplified Article
@@ -147,6 +148,7 @@ struct SimplifiedArticle: Codable {
     let leadImageUrl: String?
     let images: [String]?
     let tokensUsed: Int?
+    let cacheHit: Bool?
 }
 
 // MARK: - CEFR Level

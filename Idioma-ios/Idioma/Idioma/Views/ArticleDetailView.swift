@@ -27,6 +27,8 @@ struct ArticleDetailView: View {
     @State private var errorMessage: String?
     @State private var isBookmarked: Bool = false
     @State private var showingOriginal: Bool = true
+    @State private var showQuizSheet: Bool = false
+    @State private var showQuizButton: Bool = false
     
     // Theme colors
     let primaryColor = Color(red: 236/255, green: 72/255, blue: 153/255) // #EC4899
@@ -36,6 +38,12 @@ struct ArticleDetailView: View {
         self.article = article
         self.selectedLevel = selectedLevel
         _currentLevel = State(initialValue: nil)
+    }
+    
+    /// Whether the quiz entry point should be visible (Spanish articles only)
+    private var isSpanishArticle: Bool {
+        let code = article.languageCode ?? ""
+        return code == "es" || code == "spanish"
     }
     
     var body: some View {
@@ -50,6 +58,14 @@ struct ArticleDetailView: View {
         .navigationBarHidden(true)
         .onAppear {
             loadArticle()
+        }
+        .sheet(isPresented: $showQuizSheet) {
+            QuizSheetView(
+                articleURL: article.link ?? "",
+                level: currentLevel ?? selectedLevel,
+                language: article.languageName ?? "Spanish",
+                categories: article.idiomaCategoryIds ?? []
+            )
         }
     }
     
@@ -115,6 +131,11 @@ struct ArticleDetailView: View {
                 levelSelectorSection
                 leadImageSection
                 articleContentSection
+                
+                // Quiz button — Spanish articles only, after content loads
+                if isSpanishArticle && !isSimplifying {
+                    quizButtonSection
+                }
             }
             .padding(.bottom, 120)
         }
@@ -179,15 +200,17 @@ struct ArticleDetailView: View {
     private var leadImageSection: some View {
         let imageUrl = simplifiedContent?.leadImageUrl ?? articleContent?.leadImageUrl ?? article.image_url
         if let imageUrl = imageUrl {
-            AsyncImage(url: URL(string: imageUrl)) { phase in
-                if case .success(let image) = phase {
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(maxHeight: 240)
-                        .clipped()
-                        .cornerRadius(12)
-                }
+            CachedImage(url: imageUrl) { image in
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(maxHeight: 240)
+                    .clipped()
+                    .cornerRadius(12)
+            } placeholder: {
+                Color.clear.frame(height: 240)
+            } errorView: {
+                Color.clear.frame(height: 240)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
@@ -238,6 +261,38 @@ struct ArticleDetailView: View {
                 vocabularyLevelIDs: highlightVocabularyLevelIDs
             )
             .padding(.horizontal, 16)
+        }
+    }
+    
+    // MARK: - Quiz Button Section
+    private var quizButtonSection: some View {
+        Button(action: { showQuizSheet = true }) {
+            HStack(spacing: 10) {
+                Image(systemName: "brain.head.profile")
+                    .font(.title3)
+                Text("Take Quiz")
+                    .font(.headline)
+            }
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 52)
+            .background(
+                LinearGradient(
+                    colors: [primaryColor, primaryColor.opacity(0.8)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .cornerRadius(16)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 24)
+        .opacity(showQuizButton ? 1 : 0)
+        .offset(y: showQuizButton ? 0 : 12)
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.5).delay(0.3)) {
+                showQuizButton = true
+            }
         }
     }
     
@@ -359,7 +414,8 @@ struct ArticleDetailView: View {
                         simplifiedHtml: self.streamingText,
                         leadImageUrl: self.articleContent?.leadImageUrl ?? self.article.image_url,
                         images: self.articleContent?.images,
-                        tokensUsed: nil
+                        tokensUsed: nil,
+                        cacheHit: nil
                     )
                     self.isSimplifying = false
                 }
@@ -441,12 +497,8 @@ struct ArticleTextContent: View {
     private func rebuildAttributedText() async {
         let fmt = MarkdownFormatter.format(htmlContent)
 
-        // Set initial formatted text (headings + bold, no highlights yet)
-        if let attr = try? AttributedString(fmt.attributedString, including: \.uiKit) {
-            renderedText = attr
-        } else {
-            renderedText = AttributedString(fmt.plainText)
-        }
+        // We wait to update `renderedText` until the final string is fully built below.
+        // The fallbackText handles immediate display.
 
         guard !fmt.plainText.isEmpty else {
             renderedText = AttributedString()
@@ -470,31 +522,31 @@ struct ArticleTextContent: View {
             )
         }.value
 
-        guard !Task.isCancelled, !matches.isEmpty else {
+        guard !Task.isCancelled else { return }
+
+        if matches.isEmpty {
+            // No matches, just use the base formatting
+            if let attr = try? AttributedString(fmt.attributedString, including: \.uiKit) {
+                await MainActor.run { self.renderedText = attr }
+            } else {
+                await MainActor.run { self.renderedText = AttributedString(fmt.plainText) }
+            }
             return
         }
 
-        let batchCount = min(6, max(1, matches.count))
-        let batchSize = max(1, Int(ceil(Double(matches.count) / Double(batchCount))))
+        // Apply all matches at once in the background
+        let fullyHighlightedAttrStr = await Task.detached(priority: .userInitiated) {
+            SpanishVocabularyHighlighter.shared.makeAttributedString(
+                formattedBase: baseAttrStr,
+                matches: matches
+            )
+        }.value
+        
+        guard !Task.isCancelled else { return }
 
-        for endIndex in stride(from: batchSize, through: matches.count, by: batchSize) {
-            try? Task.checkCancellation()
-
-            let partialMatches = Array(matches.prefix(endIndex))
-            let partialText = await Task.detached(priority: .userInitiated) {
-                SpanishVocabularyHighlighter.shared.makeAttributedString(
-                    formattedBase: baseAttrStr,
-                    matches: partialMatches
-                )
-            }.value
-
-            withAnimation(.easeOut(duration: 0.18)) {
-                renderedText = partialText
-            }
-
-            if endIndex < matches.count {
-                try? await Task.sleep(nanoseconds: 45_000_000)
-            }
+        // Update UI exactly once, without animation to prevent layout thrashing
+        await MainActor.run {
+            self.renderedText = fullyHighlightedAttrStr
         }
     }
 

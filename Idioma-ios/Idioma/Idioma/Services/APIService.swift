@@ -198,7 +198,8 @@ class APIService {
         
         let decoder = JSONDecoder()
         let simplified = try decoder.decode(SimplifiedArticle.self, from: data)
-        print("✅ [API] Successfully simplified article")
+        let cacheStatus = (simplified.cacheHit == true) ? " [CACHE HIT]" : ""
+        print("✅ [API] Successfully simplified article\(cacheStatus)")
         return simplified
     }
     
@@ -236,7 +237,12 @@ class APIService {
                     
                     print("🌐 [API] Streaming URL: \(requestURL.absoluteString)")
                     
-                    let (bytes, response) = try await URLSession.shared.bytes(from: requestURL)
+                    // Use a longer timeout for streaming (default 60s is too short)
+                    let config = URLSessionConfiguration.default
+                    config.timeoutIntervalForRequest = 120
+                    config.timeoutIntervalForResource = 300
+                    let streamSession = URLSession(configuration: config)
+                    let (bytes, response) = try await streamSession.bytes(from: requestURL)
                     
                     guard let httpResponse = response as? HTTPURLResponse else {
                         continuation.finish(throwing: APIError.invalidResponse)
@@ -261,8 +267,10 @@ class APIService {
                             continue
                         }
                         
+                        
                         if event.done {
-                            print("✅ [API] SSE stream completed (tokens: \(event.totalTokens ?? 0))")
+                            let cacheStatus = (event.cacheHit == true) ? " [CACHE HIT]" : ""
+                            print("✅ [API] SSE stream completed (tokens: \(event.totalTokens ?? 0))\(cacheStatus)")
                             continuation.finish()
                             return
                         }
@@ -280,6 +288,65 @@ class APIService {
                 }
             }
         }
+    }
+    
+    // MARK: - Generate Quiz
+    /// Generates an AI reading comprehension quiz for a Spanish article
+    /// - Parameters:
+    ///   - url: The article URL (must have been extracted/simplified first)
+    ///   - level: CEFR level (A2, B1, B2, C1)
+    ///   - language: Target language name (must be "Spanish")
+    ///   - categories: Array of Idioma category IDs from the article
+    /// - Returns: Quiz with 3 multiple-choice questions
+    func generateQuiz(url: String, level: CEFRLevel, language: String, categories: [Int]) async throws -> Quiz {
+        print("\n🧠 [API] generateQuiz called")
+        print("📍 URL: \(url), Level: \(level.rawValue), Language: \(language), Categories: \(categories)")
+        
+        var components = URLComponents(string: "\(baseURL)/generateQuiz")!
+        var queryItems = [
+            URLQueryItem(name: "url", value: url),
+            URLQueryItem(name: "level", value: level.rawValue),
+            URLQueryItem(name: "language", value: language)
+        ]
+        
+        if !categories.isEmpty {
+            let categoriesStr = categories.map { String($0) }.joined(separator: ",")
+            queryItems.append(URLQueryItem(name: "categories", value: categoriesStr))
+        }
+        
+        components.queryItems = queryItems
+        
+        guard let requestURL = components.url else {
+            print("❌ [API] Invalid URL")
+            throw APIError.invalidURL
+        }
+        
+        print("🌐 [API] Request URL: \(requestURL.absoluteString)")
+        
+        let (data, response) = try await URLSession.shared.data(from: requestURL)
+        
+        print("📦 [API] Response received - Data size: \(data.count) bytes")
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            print("❌ [API] Invalid response type")
+            throw APIError.invalidResponse
+        }
+        
+        print("📊 [API] HTTP Status: \(httpResponse.statusCode)")
+        
+        guard httpResponse.statusCode == 200 else {
+            print("❌ [API] HTTP Error: \(httpResponse.statusCode)")
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("📄 [API] Error response: \(responseString)")
+            }
+            throw APIError.httpError(statusCode: httpResponse.statusCode)
+        }
+        
+        let decoder = JSONDecoder()
+        let quiz = try decoder.decode(Quiz.self, from: data)
+        let cacheStatus = (quiz.cacheHit == true) ? " [CACHE HIT]" : ""
+        print("✅ [API] Successfully generated quiz with \(quiz.questions.count) questions\(cacheStatus)")
+        return quiz
     }
 }
 
@@ -314,4 +381,5 @@ private struct SSEEvent: Codable {
     let content: String?
     let done: Bool
     let totalTokens: Int?
+    let cacheHit: Bool?
 }

@@ -240,33 +240,24 @@ struct ArticleCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Article image
-            AsyncImage(url: URL(string: article.image_url ?? "")) { phase in
-                switch phase {
-                case .empty:
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.2))
-                        .aspectRatio(16/9, contentMode: .fill)
-                        .overlay(
-                            ProgressView()
-                        )
-                case .success(let image):
-                    image
-                        .resizable()
-                        .aspectRatio(16/9, contentMode: .fill)
-                case .failure:
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.2))
-                        .aspectRatio(16/9, contentMode: .fill)
-                        .overlay(
-                            Image(systemName: "photo")
-                                .font(.largeTitle)
-                                .foregroundColor(.gray)
-                        )
-                @unknown default:
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.2))
-                        .aspectRatio(16/9, contentMode: .fill)
-                }
+            CachedImage(url: article.image_url ?? "") { image in
+                image
+                    .resizable()
+                    .aspectRatio(16/9, contentMode: .fill)
+            } placeholder: {
+                Rectangle()
+                    .fill(Color.gray.opacity(0.2))
+                    .aspectRatio(16/9, contentMode: .fill)
+                    .overlay(ProgressView())
+            } errorView: {
+                Rectangle()
+                    .fill(Color.gray.opacity(0.2))
+                    .aspectRatio(16/9, contentMode: .fill)
+                    .overlay(
+                        Image(systemName: "photo")
+                            .font(.largeTitle)
+                            .foregroundColor(.gray)
+                    )
             }
             .clipped()
             
